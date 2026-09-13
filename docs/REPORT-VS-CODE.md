@@ -1,170 +1,63 @@
-# Report vs Code — known discrepancies
+# Report vs Code
 
-`docs/Project_Report.pdf` was written during the **design phase**. The
-application in this repository is the **implementation**, and the two have
-drifted apart in the places listed below.
+`docs/Project_Report.pdf` (editable version: `docs/Project_Report.docx`) was
+rewritten on **14 September 2026** so that it describes the finished application
+rather than the design phase. Every technical claim in it was checked against
+the code in this repository.
 
-None of this is fatal. Design documents always drift, and an examiner who finds
-a gap and hears *"yes — the design said X, we built Y, and here is why"* will
-mark that far higher than a student who is surprised by their own report. What
-loses marks is being caught not knowing.
-
-Each item below gives the gap, where to see it, and the honest answer.
+Read this before the viva: the first part tells each member what changed in the
+report, the second lists the few places where something still differs.
 
 ---
 
-## 1. The report is written as if the code does not exist yet
+## 1. What changed in the report
 
-**The biggest one.** Section 10 (Conclusion) and Section 10.1 (Future Work) are
-in design-phase tense throughout:
-
-- *"PharmaLink … ended as a complete blueprint for a three tier marketplace."*
-- *"This submission is the design phase. The coding phase will implement the blueprint in the order below."*
-- *"Choosing a junction table now means the checkout code will be simple later."*
-
-Section 10.1 then lists as *future work* six things that are already built and
-committed: login and role routing, the repository layer, Admin data isolation,
-the transactional checkout, `CellFormatting` grid colouring, and the reporting
-queries.
-
-**What to do.** If you can still edit and re-export the report, rewrite Section
-10 in the past tense and replace Section 10.1 with genuine future work — the
-delivery rider role, SMS notifications, refill reminders, the real bKash
-gateway, the Bangla toggle. Those five are already at the end of 10.1 and are
-the only items there that have not been built.
-
-**If you cannot re-export:** say so plainly. *"Section 10 was written at the
-design submission. Everything in 10.1 items 1 to 6 is now implemented — here is
-the checkout transaction in `OrderService.cs`."* Then show it.
-
----
-
-## 2. The screenshots do not match the shipped sample data
-
-The screenshots in Section 8 were made against a different data set from the one
-`PharmaLinkDB_Setup.sql` creates. An examiner comparing the report to the
-running app will see different names on every screen.
-
-| In the report screenshots | In `PharmaLinkDB_Setup.sql` |
-|---|---|
-| Super Admin **Atik Bin Masud** | **PharmaLink Control** (`admin@pharmalink.com.bd`) |
-| Mitford Pharma owner **Mohammad Rafiqul** | **Kamrul Hasan** |
-| **Shahbagh Medicine Hub**, Shahbagh, owner Sultana Razia, 8.00% | **Dhanmondi Medico**, Dhanmondi, owner Shirin Sultana, 10.00% |
-| Lazz Care Pharmacy — owner Kazi Nazmul Haque, Dhanmondi, 10.00% | owner Tanvir Ahmed, Mirpur, 8.00% |
-| New Life Pharmacy — owner Farhana Yeasmin, Agrabad Ctg, `DGDA-CT-20015` | owner Imran Hossain, Uttara, `DGDA-DH-10099` |
-| Customers **Karim Sheikh**, **Shakib Al Hasan** | Nusrat Jahan, Tanjila Akter, Sabbir Ahmed |
-| Low-rated shop is **Lazz Care Pharmacy** (1.50★) | Low-rated shop is **Dhanmondi Medico** |
-
-**What to do.** Take fresh captures from the running application against the
-seeded data and use those in the README (see `docs/screenshots/README.md`). The
-report screenshots can stay as they are — they are design mockups and the report
-is a design document — but do not present them as evidence that the system runs.
-
----
-
-## 3. Controls in the report screenshots that the application does not have
-
-Searched across every `.cs` file in the repository; none of these strings appear
-anywhere in the code:
-
-| Shown in the report | Where | In the code |
+| Area | Before | Now |
 |---|---|---|
-| **Forgot password?** link, and a *Forgot Password* form | Login screenshot; also a box in the Entry and Role Decision diagram | **Built** — `ForgotPasswordForm` sends a request the Super Admin handles in Manage Users (temporary password, forced change via `ChangePasswordRequiredForm`). The report implies self-service; the code uses a help desk because there is no email or SMS service. |
-| **Remember me** checkbox | Login screenshot | **Built** as *Remember my email* — the email only, never the password (`Helpers/LoginPreferences.cs`) |
-| **Reorder** button | Order History screenshot | **Built** — adds the order's lines to the cart at today's prices; anything delisted, expired, out of stock or from a shop that is no longer approved is skipped with its reason |
-| **Save as PDF** button | Invoice screenshot | **Built** — prints the same invoice document through Windows' *Microsoft Print to PDF* printer |
-| **Warn Pharmacy**, **Open Pharmacy Record** | Moderate Reviews screenshot | **Built** as *Warn pharmacy* (one current warning per shop, shown to the owner as a dashboard banner until acknowledged) and *Open pharmacy* (opens Manage Pharmacies on that shop) |
-
-**What to say.** Every control in the report's screenshots now exists. Two differ
-in detail from the mockups — Forgot Password is a help-desk flow rather than a
-self-service one, and Remember me keeps the email only — and both are deliberate
-security choices worth explaining.
-
----
-
-## 4. The login query in the report is not the login query in the code
-
-**Report, Section 7.1:**
-
-```sql
-SELECT u.UserId, u.FullName, u.UserType, u.Status, p.PharmacyId
-FROM   Users u LEFT JOIN Pharmacies p ON p.OwnerId = u.UserId
-WHERE  u.Email = @Email
-  AND  u.PasswordHash = @PasswordHash
-  AND  u.Status = 'Active';
-```
-
-**Code, `Services/AuthService.cs` lines 39–44:**
-
-```sql
-SELECT u.UserId, u.FullName, u.Email, u.PasswordHash, u.PasswordSalt,
-       u.Phone, u.Address, u.UserType, u.Status, u.CreatedAt,
-       p.PharmacyId, p.PharmacyName, p.Status AS PharmacyStatus
-FROM   Users u LEFT JOIN Pharmacies p ON p.OwnerId = u.UserId
-WHERE  u.Email = @Email;
-```
-
-The hash and the status are then checked in C#.
-
-**The code is the better version, and you should say so.** The salt is
-per-user, so the hash cannot be computed before the row is read — matching
-`PasswordHash` in a `WHERE` clause only works if every account shares one salt,
-which defeats the point of salting. Keeping the comparison in memory also avoids
-leaking information through query timing.
-
-This is the single most likely question in the whole viva ("walk me through
-login"). Know this answer cold.
+| Tense | Written as a design ("the coding phase will implement…") | Describes the built system; Section 10.1 lists only genuine future work |
+| Requirements | 30 | 37 — requirements 31 to 37 were added during implementation: login lockout, forgot password with a temporary password and forced change, remember my email, pharmacy warnings, reported reviews, confirm / deliver / cancel orders, reorder and save invoice as PDF |
+| Traceability | Pointed at non-existent forms such as `AdminProfileForm` | Real form class names, query numbers 7.3.1–7.3.21 |
+| Passwords | "Salted SHA-256", hash compared in the SQL `WHERE` clause | PBKDF2-HMAC-SHA256, 100,000 iterations; the row is read by email and the hash, lockout and status are checked in C# (`Services/AuthService.cs`) |
+| Schema (6.1) | Design-time columns, `Orders.OrderId IDENTITY(1,1)` | Regenerated from `PharmaLinkDB_Setup.sql`: every column, constraint and all 14 indexes, `IDENTITY(1001,1)` |
+| Normalization | Single-key relations split under "2NF" | Real 2NF work only where the key is composite (Holds, Order Items); the other splits are under 3NF |
+| Queries (7) | Numbered 7.1 twice, several did not match the code or failed on the sample data | 7.1 script, 7.2 sample data, 7.3.1–7.3.21 feature queries copied from `Services/*.cs`, example values valid against the seed data |
+| Checkout | A batch with no error handling | The real transaction: `ReadCommitted`, row locks and re-checks, prescription row inside the transaction, delivery charge from `App.config` |
+| Suspension | "Three UPDATE statements", medicines delisted | Two tables (`Pharmacies`, `Users`) in one transaction; medicines disappear because catalogue queries require an Approved pharmacy |
+| Earnings | "Commission recomputed from the pharmacy rate" | Sums the frozen `Orders.CommissionAmount` |
+| Transitions (8) | Chains of screens that do not open each other | Transition tables built from the click handlers, four new navigation diagrams |
+| Screenshots | Design mockups with different sample data | The 24 captures in `docs/screenshots/` |
 
 ---
 
-## 5. Form and file names
+## 2. What still differs
 
-| In the report | In the repository |
-|---|---|
-| `AdminProfileForm` (traceability table, requirement 17) | `MyProfileForm` and `PharmacyProfileForm` — no `AdminProfileForm` exists |
-| *"The complete INSERT section is in `database/schema.sql`"* (Section 7.1) | `PharmaLinkDB_Setup.sql`, in the repository root. There is no `database/` folder |
-| *"eighteen consistent form designs"* (Section 10) | 30 Windows Forms |
+1. **The two design diagrams.** Figure 4.1 (ER diagram) and Figure 6.1 (SQL
+   schema diagram) are the drawings made at design time. They do not show the
+   twelve columns added during implementation: `Users.FailedLoginCount`,
+   `LockoutUntil`, `MustChangePassword`, `PasswordResetRequestedAt`;
+   `Pharmacies.WarningMessage`, `WarnedAt`, `WarningAcknowledgedAt`;
+   `Orders.PaymentMobile`; `Reviews.IsReported`, `ReportReason`, `ReportedAt`;
+   `Prescriptions.RejectReason`. The report says so under each figure, and
+   Section 6.1 lists every column.
+   *If asked:* "The diagrams are the design; 6.1 is generated from the final
+   script, and each added column depends only on its table's key, so the tables
+   are still in 3NF."
 
----
+2. **A stale code comment.** The summary comment at the top of
+   `Forms/MyProfileForm.cs` still describes the old password check ("a wrong
+   entry updates no rows"). The code itself verifies the current password in
+   memory and guards the `UPDATE` against a concurrent change, which is what
+   Section 7.3.18 describes.
 
-## 6. Small internal inconsistencies inside the report
-
-Worth a glance so nothing catches you off guard:
-
-- **Orders primary key.** Section 6 describes `OrderId` as `INT IDENTITY(1,1)`;
-  the `CREATE TABLE` in Section 7 says `IDENTITY(1001,1)`. The code and the
-  shipped script use **1001**, so invoice numbers start at 1001. Section 6 is
-  the one that is wrong.
-- **Duplicate section numbers.** Section 7 runs *7.1 Sample Data*, *7.2 Feature
-  Queries*, and then restarts at *7.1 Login and role routing* through *7.18*.
-  The traceability table in Section 3 points at the second set.
-- **Unnumbered chapter.** *Functional Requirements & User Stories* sits between
-  chapters 3 and 4 without a number of its own, so the table of contents jumps.
-- **Delivery charge.** Section 7.5 hardcodes `60.00 AS DeliveryCharge`; the
-  application reads it from `App.config` (`DeliveryCharge`, currently 60).
-- **"Entries shown in red are repeats"** (Section 5, Finalization). Open the PDF
-  and confirm the red actually renders — if the colour was lost on export, that
-  sentence points at nothing.
+3. **Service methods with no screen.** `ReportService.GetRevenueByArea`
+   (Section 7.3.13) and `CategoryService.Delete` exist but no form calls them.
+   The report states this rather than claiming a screen for them.
 
 ---
 
-## 7. What the report gets right, and should be defended
+## 3. The strongest single demonstration
 
-Do not let the list above make you defensive. These claims in the report are
-backed by the code, and you can prove each one on the spot:
-
-| Report claim | Proof in the repository |
-|---|---|
-| Ten tables, third normal form, `OrderItems` as the junction table | `PharmaLinkDB_Setup.sql` — 10 `CREATE TABLE`, 16 foreign keys, 9 `UNIQUE`, 20 `CHECK`, 14 indexes (counted from `sys.foreign_keys`, `sys.key_constraints`, `sys.check_constraints` and `sys.indexes` after running the script) |
-| Data isolation via `WHERE PharmacyId = @PharmacyId` | `MedicineService.cs`, `ReportService.cs`, `OrderService.cs` |
-| Checkout is one transaction | `OrderService.cs` |
-| Commission frozen on the order row | `Orders.CommissionAmount`, written once at checkout |
-| Nothing concatenated into a query string | `Database/DbHelper.cs` — every method takes `SqlParameter[]` |
-| Passwords salted and hashed (the report says SHA-256; the code now uses PBKDF2-HMAC-SHA256 with 100,000 iterations and still accepts old SHA-256 hashes) | `Helpers/PasswordHelper.cs` |
-| `TotalAmount` and `Subtotal` are computed persisted columns | `PharmaLinkDB_Setup.sql` |
-| Review verified by `OrderId`, one per purchase | `UQ_Reviews_OneEach UNIQUE (CustomerId, MedicineId, OrderId)` |
-
-The strongest single demonstration is still the isolation one: run the same
-Medicines screen as `kamrul@mitfordpharma.com` and then as
-`shirin@dhanmondimedico.com`, and show two different lists coming out of one
-form and one query.
+Data isolation: open the Medicines screen as `kamrul@mitfordpharma.com`, then as
+`shirin@dhanmondimedico.com`. One form and one query produce two different
+lists, because every Pharmacy Owner query carries `WHERE PharmacyId = @PharmacyId`
+(Section 7.3.15).

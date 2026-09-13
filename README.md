@@ -22,7 +22,7 @@ Supervised by **Dr. Md. Iftekharul Mobin**
 | Artefact | Link |
 |----------|------|
 | 🎥 **Demo video** | **[Watch the demonstration](https://drive.google.com/file/d/1v8iwB8IOXfUYcrLxpBvNW0qCfDJxXsAL/view?usp=drive_link)** — see [Section 18](#18-demo-video) for per-member timestamps |
-| 📄 **Project report (PDF)** | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) |
+| 📄 **Project report (PDF)** | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) · editable [`docs/Project_Report.docx`](docs/Project_Report.docx) |
 | 🗄️ **Database script (SQL)** | [`PharmaLinkDB_Setup.sql`](PharmaLinkDB_Setup.sql) |
 | 🖼️ **Screenshots** | [`docs/screenshots/`](docs/screenshots) |
 | 📐 **Diagrams** | [`docs/diagrams/`](docs/diagrams) |
@@ -1130,17 +1130,17 @@ The password change verifies the current hash **inside the same UPDATE**, so a w
 
 ## 9. Transition Table (Navigation)
 
-Every form in the application and every transition between them. `LoginForm` is the only entry point, the *Check UserType* decision is the only branching node, and **no arrow ever crosses from one role branch into another**.
+Every form in the application and every transition between them. `LoginForm` is the only entry point and the *UserType* switch is the only branching node. Every other screen opens from its dashboard as a modal dialog. Two forms, `MyProfileForm` and `InvoiceForm`, are shared by the Pharmacy Owner and the Customer, and each shows only the signed-in user's data, read from `UserSession`.
 
-![Entry and role decision](docs/diagrams/from-report/navigation-entry-role.png)
+![Entry and role routing](docs/diagrams/navigation/nav-entry.png)
 
-![Super Admin branch](docs/diagrams/from-report/navigation-superadmin.png)
+![Super Admin navigation](docs/diagrams/navigation/nav-superadmin.png)
 
-![Pharmacy Owner branch](docs/diagrams/from-report/navigation-admin.png)
+![Pharmacy Owner navigation](docs/diagrams/navigation/nav-admin.png)
 
-![Customer branch](docs/diagrams/from-report/navigation-customer.png)
+![Customer navigation](docs/diagrams/navigation/nav-customer.png)
 
-<sub>These are the diagrams from [`docs/Project_Report.pdf`](docs/Project_Report.pdf) Section 8. The three branches on one canvas: [`navigation-complete.png`](docs/diagrams/from-report/navigation-complete.png). The Mermaid source below is the same graph.</sub>
+<sub>These are the diagrams in [`docs/Project_Report.pdf`](docs/Project_Report.pdf) Section 8, drawn from the click handlers in `Forms/`. The report's transition tables list every transition row by row. The Mermaid source below is the simpler overview drawn at design time.</sub>
 
 ```mermaid
 flowchart TD

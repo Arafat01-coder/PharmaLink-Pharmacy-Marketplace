@@ -91,14 +91,16 @@ Both must be replaced before you submit the form.
 
 ## Part 3 — The report
 
-`docs/Project_Report.pdf` is your submitted report: AIUB cover page, the CO2 and
-CO3 rubric tables, table of contents, Chapters 1–10, the Chen ER diagram, the
-schema diagram and the navigation diagrams.
+`docs/Project_Report.pdf` is your submitted report (editable version:
+`docs/Project_Report.docx`): AIUB cover page, the CO2 and CO3 rubric tables,
+table of contents, Chapters 1–10, the Chen ER diagram, the schema diagram, the
+navigation diagrams and the 24 screenshots of the running application. It was
+rewritten on 14 September 2026 to match the finished code.
 
-Read `docs/REPORT-VS-CODE.md` before the viva. It lists the places where the
-report and the built application currently disagree. Each one is a question an
-examiner can ask, and each has a short honest answer — but only if you know it
-is coming.
+Read `docs/REPORT-VS-CODE.md` before the viva. It summarises what changed in the
+report and the few places where a diagram or a code comment still shows the
+older design. Each one is a question an examiner can ask, and each has a short
+honest answer — but only if you know it is coming.
 
 ---
 

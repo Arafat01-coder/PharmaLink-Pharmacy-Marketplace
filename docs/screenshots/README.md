@@ -4,11 +4,10 @@ Save every capture in **this folder**, as PNG, using the exact file name in the
 first column. [`../../README.md`](../../README.md) Section 15 links these names
 literally — a typo means a broken image on GitHub.
 
-> **These must be captures of the running application, not the design mockups
-> from Section 8 of `Project_Report.pdf`.** The mockups were drawn during the
-> design phase against different sample data and show controls the built app
-> does not have. Presenting them as screenshots of the finished system is the
-> kind of gap the viva is specifically checking for.
+> **These must be captures of the running application.** Section 8 of
+> `docs/Project_Report.pdf` uses these same 24 files, so if you retake a capture,
+> update the report as well — the viva specifically checks that the report's
+> screenshots match the application.
 
 ## Capture rules
 
