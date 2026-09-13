@@ -1,0 +1,27 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userprefs
+
+## Uploaded prescription images produced at runtime
+Uploads/
+
+## Local secrets (tokens, passwords) - never commit
+.env
+.env.*
+
+## Rider / VS Code
+.idea/
+.vscode/
+
+
+## macOS / Windows noise
+.DS_Store
+Thumbs.db

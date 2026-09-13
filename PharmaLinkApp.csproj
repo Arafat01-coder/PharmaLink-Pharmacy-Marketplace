@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PharmaLinkApp</RootNamespace>
+    <AssemblyName>PharmaLinkApp</AssemblyName>
+    <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The seeded order 1005 points at Uploads\Prescriptions\rx-1005-sample.jpg.
+         Shipping the sample next to the executable means the Verify Prescription
+         screen shows a real image straight after PharmaLinkDB_Setup.sql runs. -->
+    <None Include="SampleData\Prescriptions\*.jpg"
+          Link="Uploads\Prescriptions\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
