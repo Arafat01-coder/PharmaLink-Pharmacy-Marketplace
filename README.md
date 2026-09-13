@@ -21,7 +21,7 @@ Supervised by **Dr. Md. Iftekharul Mobin**
 
 | Artefact | Link |
 |----------|------|
-| 🎥 **Demo video** | **[Watch the demonstration](REPLACE_WITH_YOUR_VIDEO_LINK)** — see [Section 18](#18-demo-video) for per-member timestamps |
+| 🎥 **Demo video** | **[Watch the demonstration](https://drive.google.com/file/d/1v8iwB8IOXfUYcrLxpBvNW0qCfDJxXsAL/view?usp=drive_link)** — see [Section 18](#18-demo-video) for per-member timestamps |
 | 📄 **Project report (PDF)** | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) |
 | 🗄️ **Database script (SQL)** | [`PharmaLinkDB_Setup.sql`](PharmaLinkDB_Setup.sql) |
 | 🖼️ **Screenshots** | [`docs/screenshots/`](docs/screenshots) |
@@ -1537,7 +1537,7 @@ What the group takes away is that **the design decides how hard the coding will 
 
 ## 18. Demo Video
 
-**Video link:** REPLACE_WITH_YOUR_VIDEO_LINK
+**Video link:** [Watch the demonstration on Google Drive](https://drive.google.com/file/d/1v8iwB8IOXfUYcrLxpBvNW0qCfDJxXsAL/view?usp=drive_link)
 
 The recording is narrated in our own voices. Each member records and speaks over the part of the project they worked on, matching the contribution table in [Section 16](#16-team-contribution), and the timestamps below are the marker the examiner uses to find that member's segment.
 
@@ -1550,7 +1550,7 @@ The recording is narrated in our own voices. Each member records and speaks over
 | 4 | Data isolation demonstrated: log in as a second owner, show the other shop's data is unreachable (`WHERE PharmacyId = @PharmacyId`) | Muhtasim Mahin | | |
 | 5 | Customer screens: search and the five filters, medicine details, cart across two pharmacies, checkout, invoice, order history and rating | Shohidur Raza Sujon | | |
 
-> **Before recording, fill in the two `REPLACE_WITH_YOUR_VIDEO_LINK` placeholders** — one here and one in [Quick Links](#quick-links) — and complete the start and end columns above. The viva announcement asks for a link with your own voice and your individual timestamp, so an unfilled table is a failed check.
+> **Complete the start and end columns above.** The viva announcement asks for a link with your own voice and your individual timestamp, so an unfilled table is a failed check.
 
 ### Features to demonstrate on camera
 
