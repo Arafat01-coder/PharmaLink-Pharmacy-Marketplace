@@ -1543,11 +1543,12 @@ The recording is narrated in our own voices. Each member records and speaks over
 
 | # | Segment | Member | Start | End |
 |---|---------|--------|-------|-----|
-| 0 | Introduction, case study, functional requirements and user stories | Nafiul Islam | 00:00 | |
-| 1 | Database: schema, normalization to third normal form, one JOIN / GROUP BY query explained live | Md Arafat Rahman | | |
-| 2 | ER and navigation diagrams; Super Admin and Admin screens | Muhtasim Mahin | | |
-| 3 | Customer screens: search and filter, cart across two pharmacies, checkout, invoice, rating | Shohidur Raza Sujon | | |
-| 4 | Data isolation demonstrated: log in as a second owner, show the other shop's data is unreachable | *(fill in)* | | |
+| 0 | Introduction: case study, functional requirements and the navigation diagram | Nafiul Islam | 00:00 | |
+| 1 | Accounts and security: login for all three roles, sign up validation, lockout after 5 failed logins, forgot password and forced password change; Super Admin dashboard, manage users and moderate reviews | Nafiul Islam | | |
+| 2 | Database and reports: ER diagram, schema and normalisation to third normal form, one JOIN / GROUP BY / HAVING query explained live; sales, earnings and low-rated shops reports; pharmacy approval and warnings; prescription upload | Md Arafat Rahman | | |
+| 3 | Pharmacy Owner screens: dashboard, medicine CRUD with validation, low-stock alert, categories, discount offers and prescription verification | Muhtasim Mahin | | |
+| 4 | Data isolation demonstrated: log in as a second owner, show the other shop's data is unreachable (`WHERE PharmacyId = @PharmacyId`) | Muhtasim Mahin | | |
+| 5 | Customer screens: search and the five filters, medicine details, cart across two pharmacies, checkout, invoice, order history and rating | Shohidur Raza Sujon | | |
 
 > **Before recording, fill in the two `REPLACE_WITH_YOUR_VIDEO_LINK` placeholders** — one here and one in [Quick Links](#quick-links) — and complete the start and end columns above. The viva announcement asks for a link with your own voice and your individual timestamp, so an unfilled table is a failed check.
 
