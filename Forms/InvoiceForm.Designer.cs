@@ -21,6 +21,7 @@ namespace PharmaLinkApp.Forms
             rtbInvoice = new RichTextBox();
             lblFooterNote = new Label();
             btnPrint = new Button();
+            btnSavePdf = new Button();
             btnSaveText = new Button();
             btnClose = new Button();
 
@@ -64,24 +65,31 @@ namespace PharmaLinkApp.Forms
             lblFooterNote.TabIndex = 2;
             lblFooterNote.Text = "The platform commission is deducted from the pharmacy, not added to your bill. What you see above is exactly what you pay.";
             //
-            btnPrint.Location = new Point(320, 630);
+            btnPrint.Location = new Point(210, 630);
             btnPrint.Name = "btnPrint";
-            btnPrint.Size = new Size(140, 40);
+            btnPrint.Size = new Size(120, 40);
             btnPrint.TabIndex = 3;
             btnPrint.Text = "Print";
             btnPrint.Click += btnPrint_Click;
             //
-            btnSaveText.Location = new Point(470, 630);
+            btnSavePdf.Location = new Point(340, 630);
+            btnSavePdf.Name = "btnSavePdf";
+            btnSavePdf.Size = new Size(140, 40);
+            btnSavePdf.TabIndex = 4;
+            btnSavePdf.Text = "Save as PDF";
+            btnSavePdf.Click += btnSavePdf_Click;
+            //
+            btnSaveText.Location = new Point(490, 630);
             btnSaveText.Name = "btnSaveText";
-            btnSaveText.Size = new Size(160, 40);
-            btnSaveText.TabIndex = 4;
+            btnSaveText.Size = new Size(150, 40);
+            btnSaveText.TabIndex = 5;
             btnSaveText.Text = "Save as text file";
             btnSaveText.Click += btnSaveText_Click;
             //
-            btnClose.Location = new Point(640, 630);
+            btnClose.Location = new Point(650, 630);
             btnClose.Name = "btnClose";
-            btnClose.Size = new Size(120, 40);
-            btnClose.TabIndex = 5;
+            btnClose.Size = new Size(110, 40);
+            btnClose.TabIndex = 6;
             btnClose.Text = "Close";
             btnClose.Click += btnClose_Click;
             //
@@ -92,6 +100,7 @@ namespace PharmaLinkApp.Forms
             ClientSize = new Size(780, 686);
             Controls.Add(btnClose);
             Controls.Add(btnSaveText);
+            Controls.Add(btnSavePdf);
             Controls.Add(btnPrint);
             Controls.Add(lblFooterNote);
             Controls.Add(rtbInvoice);
@@ -116,6 +125,7 @@ namespace PharmaLinkApp.Forms
         private RichTextBox rtbInvoice;
         private Label lblFooterNote;
         private Button btnPrint;
+        private Button btnSavePdf;
         private Button btnSaveText;
         private Button btnClose;
     }

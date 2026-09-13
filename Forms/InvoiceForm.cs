@@ -59,7 +59,8 @@ namespace PharmaLinkApp.Forms
             lblFooterNote.ForeColor = UiTheme.TextMuted;
 
             UiTheme.StylePrimary(btnPrint);
-            UiTheme.StyleAccent(btnSaveText);
+            UiTheme.StyleAccent(btnSavePdf);
+            UiTheme.StyleSecondary(btnSaveText);
             UiTheme.StyleSecondary(btnClose);
         }
 
@@ -220,24 +221,38 @@ namespace PharmaLinkApp.Forms
         //  PRINT AND SAVE
         // ---------------------------------------------------------------------
 
+        /// <summary>The PDF printer that ships with Windows 10 and 11.</summary>
+        private const string PdfPrinterName = "Microsoft Print to PDF";
+
+        /// <summary>
+        /// The one print setup shared by Print and Save as PDF, so the PDF is
+        /// the paper invoice page for page. The character counter is reset in
+        /// BeginPrint rather than by the caller: every print job (a second
+        /// Print, or a PDF after a Print) then starts again from the first
+        /// character, and pagination in Document_PrintPage keeps working.
+        /// The caller owns and disposes the document.
+        /// </summary>
+        private PrintDocument CreateInvoiceDocument()
+        {
+            PrintDocument document = new PrintDocument();
+            document.DocumentName = "PharmaLink invoice " + _orderId;
+            document.BeginPrint += (s, e) => _printCharsPrinted = 0;
+            document.PrintPage += Document_PrintPage;
+            return document;
+        }
+
         private void btnPrint_Click(object sender, EventArgs e)
         {
             if (_order == null) return;
 
             try
             {
-                using (PrintDocument document = new PrintDocument())
+                using (PrintDocument document = CreateInvoiceDocument())
+                using (PrintDialog dialog = new PrintDialog())
                 {
-                    document.DocumentName = "PharmaLink invoice " + _orderId;
-                    document.PrintPage += Document_PrintPage;
-                    _printCharsPrinted = 0;
-
-                    using (PrintDialog dialog = new PrintDialog())
-                    {
-                        dialog.Document = document;
-                        if (dialog.ShowDialog(this) == DialogResult.OK)
-                            document.Print();
-                    }
+                    dialog.Document = document;
+                    if (dialog.ShowDialog(this) == DialogResult.OK)
+                        document.Print();
                 }
             }
             catch (Exception ex)
@@ -246,6 +261,112 @@ namespace PharmaLinkApp.Forms
                                 "\r\n\r\nYou can still save it as a text file.",
                     "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        /// <summary>
+        /// Saves the invoice as a PDF by printing the same document to the
+        /// "Microsoft Print to PDF" printer with PrintToFile, so no PDF library
+        /// is needed. StandardPrintController suppresses the "Printing page 1"
+        /// progress window. The printer can be removed from Windows, so its
+        /// presence is checked first and the user is pointed at Print instead.
+        /// </summary>
+        private void btnSavePdf_Click(object sender, EventArgs e)
+        {
+            if (_order == null) return;
+
+            string path;
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Filter = "PDF document (*.pdf)|*.pdf";
+                dialog.DefaultExt = "pdf";
+                dialog.AddExtension = true;
+                dialog.OverwritePrompt = true;
+                dialog.FileName = "PharmaLink-Invoice-" + _orderId + ".pdf";
+
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                path = dialog.FileName;
+            }
+
+            string message;
+            bool saved;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                saved = SaveAsPdf(path, out message);
+            }
+            catch (Exception ex)
+            {
+                saved = false;
+                message = "The PDF could not be saved.\r\n\r\n" + DbHelper.Describe(ex);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
+
+            if (saved)
+                MessageBox.Show(message, "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else
+                MessageBox.Show(message, "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        /// <summary>
+        /// Prints the invoice to <paramref name="path"/> through the PDF printer
+        /// and checks the file really appeared. Returns false with a plain
+        /// message when the printer is missing or no file was written.
+        ///
+        /// The old file is removed first (the save dialog already asked before
+        /// overwriting), otherwise a failed print would leave the previous PDF
+        /// in place and "the file exists" would prove nothing. The spooler can
+        /// finish writing a moment after Print returns, so the check waits a
+        /// few seconds for a non-empty file.
+        /// </summary>
+        private bool SaveAsPdf(string path, out string message)
+        {
+            using (PrintDocument document = CreateInvoiceDocument())
+            {
+                document.PrinterSettings.PrinterName = PdfPrinterName;
+                if (!document.PrinterSettings.IsValid)
+                {
+                    message = "The \"" + PdfPrinterName + "\" printer is not installed on this computer, " +
+                              "so the invoice cannot be saved as a PDF directly.\r\n\r\n" +
+                              "Use Print instead and choose a PDF printer from the list, " +
+                              "or save the invoice as a text file.";
+                    return false;
+                }
+
+                try
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    message = "The existing file could not be replaced - it may be open in another program.\r\n\r\n" +
+                              "Close it, or choose a different file name, and try again.";
+                    return false;
+                }
+
+                document.PrinterSettings.PrintToFile = true;
+                document.PrinterSettings.PrintFileName = path;
+                document.PrintController = new StandardPrintController();
+                document.Print();
+            }
+
+            DateTime deadline = DateTime.Now.AddSeconds(10);
+            while (DateTime.Now < deadline)
+            {
+                FileInfo file = new FileInfo(path);
+                if (file.Exists && file.Length > 0)
+                {
+                    message = "Invoice #" + _orderId + " saved as a PDF to:\r\n\r\n" + path;
+                    return true;
+                }
+                Thread.Sleep(200);
+            }
+
+            message = "Windows did not write the PDF file.\r\n\r\n" +
+                      "Try again, or use Print and choose a PDF printer from the list.";
+            return false;
         }
 
         private void Document_PrintPage(object sender, PrintPageEventArgs e)

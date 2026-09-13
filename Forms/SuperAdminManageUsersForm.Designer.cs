@@ -32,6 +32,7 @@ namespace PharmaLinkApp.Forms
 
             btnSuspend = new Button();
             btnActivate = new Button();
+            btnResetPassword = new Button();
             lblNote = new Label();
             lblStatus = new Label();
 
@@ -151,12 +152,20 @@ namespace PharmaLinkApp.Forms
             btnActivate.Text = "Activate account";
             btnActivate.Click += btnActivate_Click;
             //
+            btnResetPassword.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            btnResetPassword.Location = new Point(360, 562);
+            btnResetPassword.Name = "btnResetPassword";
+            btnResetPassword.Size = new Size(160, 36);
+            btnResetPassword.TabIndex = 12;
+            btnResetPassword.Text = "Reset password";
+            btnResetPassword.Click += btnResetPassword_Click;
+            //
             lblNote.AutoSize = false;
             lblNote.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            lblNote.Location = new Point(370, 560);
+            lblNote.Location = new Point(540, 556);
             lblNote.Name = "lblNote";
-            lblNote.Size = new Size(804, 40);
-            lblNote.TabIndex = 12;
+            lblNote.Size = new Size(634, 52);
+            lblNote.TabIndex = 13;
             lblNote.Text = "Suspending a pharmacy owner also suspends their approved pharmacy, which hides it from customers. Activating an owner reinstates a suspended pharmacy. A pending or rejected registration cannot be activated here - approve it from Manage Pharmacies.";
             //
             lblStatus.AutoSize = false;
@@ -164,7 +173,7 @@ namespace PharmaLinkApp.Forms
             lblStatus.Location = new Point(20, 612);
             lblStatus.Name = "lblStatus";
             lblStatus.Size = new Size(1154, 20);
-            lblStatus.TabIndex = 13;
+            lblStatus.TabIndex = 14;
             //
             // SuperAdminManageUsersForm
             //
@@ -173,6 +182,7 @@ namespace PharmaLinkApp.Forms
             ClientSize = new Size(1200, 646);
             Controls.Add(lblStatus);
             Controls.Add(lblNote);
+            Controls.Add(btnResetPassword);
             Controls.Add(btnActivate);
             Controls.Add(btnSuspend);
             Controls.Add(dgvUsers);
@@ -214,6 +224,7 @@ namespace PharmaLinkApp.Forms
         private DataGridView dgvUsers;
         private Button btnSuspend;
         private Button btnActivate;
+        private Button btnResetPassword;
         private Label lblNote;
         private Label lblStatus;
     }

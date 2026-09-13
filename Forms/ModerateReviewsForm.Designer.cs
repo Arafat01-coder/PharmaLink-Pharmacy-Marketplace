@@ -31,6 +31,8 @@ namespace PharmaLinkApp.Forms
             btnHide = new Button();
             btnUnhide = new Button();
             btnDismissReport = new Button();
+            btnWarnPharmacy = new Button();
+            btnOpenPharmacy = new Button();
             lblNote = new Label();
             lblStatus = new Label();
 
@@ -119,7 +121,7 @@ namespace PharmaLinkApp.Forms
             txtComment.Name = "txtComment";
             txtComment.ReadOnly = true;
             txtComment.ScrollBars = ScrollBars.Vertical;
-            txtComment.Size = new Size(720, 84);
+            txtComment.Size = new Size(720, 100);
             txtComment.TabIndex = 7;
             //
             btnHide.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
@@ -146,28 +148,46 @@ namespace PharmaLinkApp.Forms
             btnDismissReport.Text = "Dismiss report (keep the review visible)";
             btnDismissReport.Click += btnDismissReport_Click;
             //
+            btnWarnPharmacy.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnWarnPharmacy.Location = new Point(760, 578);
+            btnWarnPharmacy.Name = "btnWarnPharmacy";
+            btnWarnPharmacy.Size = new Size(200, 34);
+            btnWarnPharmacy.TabIndex = 11;
+            btnWarnPharmacy.Text = "Warn pharmacy";
+            btnWarnPharmacy.Click += btnWarnPharmacy_Click;
+            //
+            btnOpenPharmacy.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnOpenPharmacy.Location = new Point(974, 578);
+            btnOpenPharmacy.Name = "btnOpenPharmacy";
+            btnOpenPharmacy.Size = new Size(200, 34);
+            btnOpenPharmacy.TabIndex = 12;
+            btnOpenPharmacy.Text = "Open pharmacy";
+            btnOpenPharmacy.Click += btnOpenPharmacy_Click;
+            //
             lblNote.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             lblNote.AutoSize = false;
-            lblNote.Location = new Point(760, 578);
+            lblNote.Location = new Point(760, 618);
             lblNote.Name = "lblNote";
             lblNote.Size = new Size(414, 56);
-            lblNote.TabIndex = 11;
+            lblNote.TabIndex = 13;
             lblNote.Text = "Hiding removes the review from the customer screens and from every average rating, but keeps it so it can be restored. Hiding a reported review also closes the report.";
             //
             lblStatus.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblStatus.AutoSize = false;
-            lblStatus.Location = new Point(20, 592);
+            lblStatus.Location = new Point(20, 604);
             lblStatus.Name = "lblStatus";
-            lblStatus.Size = new Size(720, 40);
-            lblStatus.TabIndex = 12;
+            lblStatus.Size = new Size(720, 60);
+            lblStatus.TabIndex = 14;
             //
             // ModerateReviewsForm
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1200, 640);
+            ClientSize = new Size(1200, 680);
             Controls.Add(lblStatus);
             Controls.Add(lblNote);
+            Controls.Add(btnOpenPharmacy);
+            Controls.Add(btnWarnPharmacy);
             Controls.Add(btnDismissReport);
             Controls.Add(btnUnhide);
             Controls.Add(btnHide);
@@ -207,6 +227,8 @@ namespace PharmaLinkApp.Forms
         private Button btnHide;
         private Button btnUnhide;
         private Button btnDismissReport;
+        private Button btnWarnPharmacy;
+        private Button btnOpenPharmacy;
         private Label lblNote;
         private Label lblStatus;
     }

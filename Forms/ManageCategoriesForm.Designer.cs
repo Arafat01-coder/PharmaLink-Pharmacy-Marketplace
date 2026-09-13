@@ -183,7 +183,7 @@ namespace PharmaLinkApp.Forms
             lblEditorNote.Name = "lblEditorNote";
             lblEditorNote.Size = new Size(316, 80);
             lblEditorNote.TabIndex = 10;
-            lblEditorNote.Text = "A category that medicines already use is never deleted, only deactivated: it disappears from the dropdowns while existing medicines keep it. Category names must be unique, so a second 'Antibiotic' is refused with a red message under the name.";
+            lblEditorNote.Text = "A category in use is deactivated, never deleted: it leaves the dropdowns but existing medicines keep it. Names must be unique.";
             //
             lblStatus.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblStatus.AutoSize = false;

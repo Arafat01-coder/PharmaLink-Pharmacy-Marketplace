@@ -75,6 +75,12 @@ GO
 --  accepts those and re-hashes them at the next successful login.
 --  FailedLoginCount and LockoutUntil drive the login lockout: five wrong
 --  passwords in a row lock the account for fifteen minutes.
+--  There is no email or SMS service, so a forgotten password goes through the
+--  Super Admin: PasswordResetRequestedAt records when the "Forgot password?"
+--  form matched this account (NULL = no request waiting), and
+--  MustChangePassword = 1 means the account is signed in with a temporary
+--  password the Super Admin issued, so the next login must choose a new one
+--  before any dashboard opens.
 -- -----------------------------------------------------------------------------
 CREATE TABLE Users (
     UserId          INT             IDENTITY(1,1)   NOT NULL,
@@ -92,8 +98,11 @@ CREATE TABLE Users (
     FailedLoginCount INT                            NOT NULL
         CONSTRAINT DF_Users_FailedLogins DEFAULT (0),
     LockoutUntil    DATETIME2(0)                        NULL,
+    MustChangePassword BIT                          NOT NULL
+        CONSTRAINT DF_Users_MustChangePw DEFAULT (0),
+    PasswordResetRequestedAt DATETIME2(0)               NULL,
 
-    CONSTRAINT PK_Users             PRIMARY KEY (UserId),
+    CONSTRAINT PK_Users            PRIMARY KEY (UserId),
     CONSTRAINT UQ_Users_Email       UNIQUE (Email),
     CONSTRAINT UQ_Users_Phone       UNIQUE (Phone),
     CONSTRAINT CK_Users_Type        CHECK (UserType IN ('SuperAdmin', 'Admin', 'Customer')),
@@ -129,6 +138,10 @@ GO
 --  (taken off the platform), Rejected (registration refused; the row is kept
 --  so the licence number stays taken).  Customers only ever see medicines of
 --  an Approved pharmacy; suspending a shop does not change Medicines.IsActive.
+--  WarningMessage / WarnedAt / WarningAcknowledgedAt hold the Super Admin's
+--  latest formal warning to the owner (a step short of suspension).  The owner
+--  sees it as a banner until WarningAcknowledgedAt is set; all three are NULL
+--  for a shop that has never been warned.
 -- -----------------------------------------------------------------------------
 CREATE TABLE Pharmacies (
     PharmacyId      INT             IDENTITY(1,1)   NOT NULL,
@@ -145,8 +158,11 @@ CREATE TABLE Pharmacies (
         CONSTRAINT DF_Pharmacies_Status DEFAULT ('Pending'),
     RegisteredAt    DATETIME2(0)                    NOT NULL
         CONSTRAINT DF_Pharmacies_Reg    DEFAULT (SYSDATETIME()),
+    WarningMessage  NVARCHAR(500)                       NULL,
+    WarnedAt        DATETIME2(0)                        NULL,
+    WarningAcknowledgedAt DATETIME2(0)                  NULL,
 
-    CONSTRAINT PK_Pharmacies            PRIMARY KEY (PharmacyId),
+    CONSTRAINT PK_Pharmacies           PRIMARY KEY (PharmacyId),
     CONSTRAINT UQ_Pharmacies_Owner      UNIQUE (OwnerId),
     CONSTRAINT UQ_Pharmacies_License    UNIQUE (LicenseNo),
     CONSTRAINT FK_Pharmacies_Owner      FOREIGN KEY (OwnerId) REFERENCES Users(UserId),
@@ -459,6 +475,16 @@ INSERT INTO Pharmacies (PharmacyId, OwnerId, PharmacyName, LicenseNo, Area, Addr
 SET IDENTITY_INSERT Pharmacies OFF;
 GO
 
+-- Dhanmondi Medico is the badly reviewed shop (see Reviews below), so the Super
+-- Admin has already warned it three days ago and the owner has not yet
+-- acknowledged the warning: the owner's dashboard banner shows it at first login.
+UPDATE Pharmacies
+SET    WarningMessage        = N'Several customers report opened boxes and near-expiry stock. Please check your packing and expiry dates.',
+       WarnedAt              = DATEADD(DAY, -3, SYSDATETIME()),
+       WarningAcknowledgedAt = NULL
+WHERE  PharmacyId = 2;
+GO
+
 
 -- Medicines 1-8 belong to Mitford Pharma, 9-15 to Dhanmondi Medico,
 -- 16-22 to Lazz Care Pharmacy and 23-24 to the still Pending New Life Pharmacy,
@@ -561,12 +587,19 @@ GO
 
 
 -- -----------------------------------------------------------------------------
---  One prescription is waiting in Lazz Care Pharmacy's verification queue.
---  Order 1005 contains Insulin, whose RequiresRx flag is set, so that order
---  cannot be moved to Confirmed until this row is Approved.
+--  Prescriptions.
+--  Order 1001 contained Azithrocin, which is prescription only, so Mitford
+--  Pharma approved Rahim's prescription before confirming it - which is what
+--  his review of that order says. Without this row the order history would
+--  show a delivered Rx order with no prescription on file.
+--  One prescription is still waiting in Lazz Care Pharmacy's verification
+--  queue: order 1005 contains Insulin, so that order cannot be moved to
+--  Confirmed until the row is Approved.
 -- -----------------------------------------------------------------------------
-INSERT INTO Prescriptions (OrderId, CustomerId, ImagePath, DoctorName, VerifyStatus) VALUES
- (1005, 9, N'Uploads\Prescriptions\rx-1005-sample.jpg', N'Dr. Anisur Rahman, MBBS', 'Pending');
+INSERT INTO Prescriptions (OrderId, CustomerId, ImagePath, DoctorName, UploadedAt, VerifyStatus) VALUES
+ (1001, 6, N'Uploads\Prescriptions\rx-1001-sample.jpg', N'Dr. Farhana Kabir, MBBS, FCPS',     DATEADD(DAY, -21, SYSDATETIME()), 'Approved'),
+ (1004, 8, N'Uploads\Prescriptions\rx-1004-sample.jpg', N'Dr. Mahmudul Hasan, MBBS, MD',      DATEADD(DAY,  -9, SYSDATETIME()), 'Approved'),
+ (1005, 9, N'Uploads\Prescriptions\rx-1005-sample.jpg', N'Dr. Anisur Rahman, MBBS',           DATEADD(DAY,  -4, SYSDATETIME()), 'Pending');
 GO
 
 

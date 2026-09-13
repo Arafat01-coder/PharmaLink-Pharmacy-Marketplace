@@ -115,11 +115,14 @@ namespace PharmaLinkApp.Services
                             // rather than trusting what the cart screen showed, is
                             // what stops the same unit being sold twice or an
                             // unbuyable medicine being sold at all.
+                            // HOLDLOCK on Cart locks the customer's key range, not just
+                            // the rows that exist now, so a line added from a second
+                            // window cannot slip into this order unchecked.
                             const string lockAndCheck = @"
 SELECT  m.MedicineId, m.MedicineName, ct.Quantity, m.Stock, m.IsActive, m.RequiresRx,
         CASE WHEN m.ExpiryDate > CAST(GETDATE() AS DATE) THEN 0 ELSE 1 END AS IsExpired,
         ph.Status AS PharmacyStatus
-FROM    Cart ct WITH (UPDLOCK, ROWLOCK)
+FROM    Cart ct WITH (UPDLOCK, HOLDLOCK)
         INNER JOIN Medicines  m  WITH (UPDLOCK, ROWLOCK) ON m.MedicineId  = ct.MedicineId
         INNER JOIN Pharmacies ph                         ON ph.PharmacyId = m.PharmacyId
 WHERE   ct.CustomerId = @CustomerId
@@ -166,6 +169,18 @@ FROM    Cart ct
                        AND  CAST(GETDATE() AS DATE) BETWEEN o.StartDate AND o.EndDate) d
 WHERE   ct.CustomerId = @CustomerId AND m.PharmacyId = @PharmacyId;
 
+-- The lines about to become the order must be exactly the lines that were
+-- locked and checked above; anything else means the cart changed underneath.
+IF (SELECT COUNT(*) FROM @Lines) <> @CheckedLines
+    THROW 50001, 'Your cart changed while the order was being placed. Please review your cart and try again.', 1;
+
+-- Whether a prescription is needed is decided from these lines, not from
+-- what the screen believed.
+IF @ImagePath IS NULL AND EXISTS (SELECT 1 FROM @Lines l
+                                  INNER JOIN Medicines m ON m.MedicineId = l.MedicineId
+                                  WHERE m.RequiresRx = 1)
+    THROW 50002, 'This order contains a prescription-only medicine. Attach a photo of the prescription and try again.', 1;
+
 DECLARE @Total DECIMAL(12,2) = (SELECT CAST(SUM(Quantity * UnitPrice) AS DECIMAL(12,2)) FROM @Lines);
 DECLARE @CommRate DECIMAL(5,2) = (SELECT CommissionRate FROM Pharmacies WHERE PharmacyId = @PharmacyId);
 
@@ -182,7 +197,9 @@ INSERT INTO OrderItems (OrderId, MedicineId, Quantity, UnitPrice)
 SELECT  @NewOrderId, MedicineId, Quantity, UnitPrice FROM @Lines;
 
 -- the prescription is part of the order, so it commits or rolls back with it
-IF @ImagePath IS NOT NULL
+IF @ImagePath IS NOT NULL AND EXISTS (SELECT 1 FROM @Lines l
+                                      INNER JOIN Medicines m ON m.MedicineId = l.MedicineId
+                                      WHERE m.RequiresRx = 1)
     INSERT INTO Prescriptions (OrderId, CustomerId, ImagePath, DoctorName)
     VALUES (@NewOrderId, @CustomerId, @ImagePath, @DoctorName);
 
@@ -205,10 +222,11 @@ SELECT @NewOrderId;";
                                 cmd.Parameters.AddWithValue("@DeliveryCharge", deliveryCharge);
                                 cmd.Parameters.AddWithValue("@DeliveryAddress", deliveryAddress ?? "");
                                 cmd.Parameters.AddWithValue("@PaymentMethod", paymentMethod ?? "");
+                                cmd.Parameters.AddWithValue("@CheckedLines", lines.Rows.Count);
                                 cmd.Parameters.Add(new SqlParameter("@PaymentMobile", SqlDbType.NVarChar, 20)
                                     { Value = (object)mobile ?? DBNull.Value });
                                 cmd.Parameters.Add(new SqlParameter("@ImagePath", SqlDbType.NVarChar, 250)
-                                    { Value = needsRx && storedPath != null ? storedPath : (object)DBNull.Value });
+                                    { Value = storedPath != null ? storedPath : (object)DBNull.Value });
                                 cmd.Parameters.Add(new SqlParameter("@DoctorName", SqlDbType.NVarChar, 100)
                                     { Value = string.IsNullOrWhiteSpace(doctorName) ? DBNull.Value : (object)doctorName.Trim() });
                                 newOrderId = Convert.ToInt32(cmd.ExecuteScalar());
@@ -227,7 +245,12 @@ SELECT @NewOrderId;";
                         catch (Exception ex)
                         {
                             try { tx.Rollback(); } catch { /* connection already gone */ }
-                            message = "The order could not be placed. " + DbHelper.Describe(ex);
+
+                            // 50001 and 50002 are this batch's own THROWs and are
+                            // already written for the customer.
+                            message = ex is SqlException own && own.Number >= 50000
+                                ? own.Message
+                                : "The order could not be placed. " + DbHelper.Describe(ex);
                             return 0;
                         }
                     }
@@ -612,6 +635,31 @@ END CATCH;";
             return _db.ExecuteScalarInt(sql,
                 DbHelper.P("@OrderId", orderId),
                 DbHelper.P("@CustomerId", customerId)) == 1;
+        }
+
+        /// <summary>
+        /// The lines of one of the customer's own past orders, with the
+        /// MedicineId that "Reorder" needs to put each one back in the cart.
+        ///
+        /// The join to Orders carries CustomerId, so an order number that is
+        /// not this customer's returns no rows rather than someone else's
+        /// shopping list. Prices are deliberately not returned: a reorder is
+        /// charged at today's price, which the cart and checkout work out.
+        /// </summary>
+        public DataTable GetReorderLines(int orderId, int customerId)
+        {
+            const string sql = @"
+SELECT  oi.MedicineId, m.MedicineName, m.Strength, oi.Quantity
+FROM    OrderItems oi
+        INNER JOIN Orders    o ON o.OrderId    = oi.OrderId
+        INNER JOIN Medicines m ON m.MedicineId = oi.MedicineId
+WHERE   oi.OrderId   = @OrderId
+  AND   o.CustomerId = @CustomerId
+ORDER BY m.MedicineName;";
+
+            return _db.ExecuteTable(sql,
+                DbHelper.P("@OrderId", orderId),
+                DbHelper.P("@CustomerId", customerId));
         }
 
         public bool OrderBelongsToCustomer(int orderId, int customerId)

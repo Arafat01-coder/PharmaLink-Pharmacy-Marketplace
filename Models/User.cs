@@ -17,6 +17,13 @@ namespace PharmaLinkApp.Models
         public string Status { get; set; } = "";        // Pending | Active | Suspended
         public DateTime CreatedAt { get; set; }
 
+        /// <summary>
+        /// True while the account is signed in with a temporary password the
+        /// Super Admin issued (Users.MustChangePassword). The login screen then
+        /// makes the user choose a new password before any dashboard opens.
+        /// </summary>
+        public bool MustChangePassword { get; set; }
+
         /// <summary>Filled by the LEFT JOIN on Pharmacies; 0 when the user does not own a shop.</summary>
         public int PharmacyId { get; set; }
         public string PharmacyName { get; set; } = "";

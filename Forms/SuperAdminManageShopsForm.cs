@@ -57,6 +57,7 @@ namespace PharmaLinkApp.Forms
             UiTheme.StyleGrid(dgvPharmacies);
             UiTheme.EnableEmptyMessage(dgvPharmacies, "No pharmacy matches these filters.");
             dgvPharmacies.CellFormatting += dgvPharmacies_CellFormatting;
+            dgvPharmacies.CellToolTipTextNeeded += dgvPharmacies_CellToolTipTextNeeded;
 
             UiTheme.StyleSuccess(btnApprove);
             UiTheme.StyleDanger(btnSuspend);
@@ -155,6 +156,13 @@ namespace PharmaLinkApp.Forms
         /// approving, is never cut off. The owner's email is hidden because the
         /// owner's name and the licence already identify the shop, and the
         /// search box still matches on the owner.
+        ///
+        /// The Warning column ("Warned 13 Sep 26" / "Read 14 Sep 26") needed
+        /// room, and the grid already filled its width at 125% scaling, so two
+        /// low-value columns are hidden: the medicine count (Delete is decided
+        /// by the order count) and the registration date. Hidden columns keep
+        /// their values, so nothing that reads them from the row changes. The
+        /// full warning text is the Warning cell's tooltip.
         /// </summary>
         private void LabelColumns()
         {
@@ -168,27 +176,41 @@ namespace PharmaLinkApp.Forms
             dgvPharmacies.Columns["ContactPhone"].HeaderText = "Contact";
             dgvPharmacies.Columns["CommissionRate"].HeaderText = "Comm %";
             dgvPharmacies.Columns["Status"].HeaderText = "Status";
-            dgvPharmacies.Columns["Medicines"].HeaderText = "Items";
+            dgvPharmacies.Columns["Medicines"].Visible = false;
             dgvPharmacies.Columns["Orders"].HeaderText = "Orders";
             dgvPharmacies.Columns["AverageRating"].HeaderText = "Rating";
-            dgvPharmacies.Columns["RegisteredAt"].HeaderText = "Registered";
-            dgvPharmacies.Columns["RegisteredAt"].DefaultCellStyle.Format = "dd MMM yy";
+            // The registration date gave up its column to Warning. At 125%
+            // scaling twelve visible columns left every layout cutting one of
+            // them by a few pixels; pending shops already sort to the top, and
+            // approving one depends on the licence, not on the date.
+            dgvPharmacies.Columns["RegisteredAt"].Visible = false;
+            dgvPharmacies.Columns["WarningState"].HeaderText = "Warning";
+            dgvPharmacies.Columns["WarningMessage"].Visible = false;
 
-            UiTheme.SizeColumn(dgvPharmacies, "PharmacyId", 28, 36);
-            UiTheme.SizeColumn(dgvPharmacies, "PharmacyName", 120, 130);
-            UiTheme.SizeColumn(dgvPharmacies, "OwnerName", 95, 105);
-            UiTheme.SizeColumn(dgvPharmacies, "LicenseNo", 95, 110);
-            UiTheme.SizeColumn(dgvPharmacies, "Area", 65, 75);
-            UiTheme.SizeColumn(dgvPharmacies, "ContactPhone", 85, 95);
-            UiTheme.SizeColumn(dgvPharmacies, "CommissionRate", 45, 60);
-            UiTheme.SizeColumn(dgvPharmacies, "Status", 60, 78);
-            UiTheme.SizeColumn(dgvPharmacies, "Medicines", 38, 45);
-            UiTheme.SizeColumn(dgvPharmacies, "Orders", 40, 52);
-            UiTheme.SizeColumn(dgvPharmacies, "AverageRating", 42, 52);
-            UiTheme.SizeColumn(dgvPharmacies, "RegisteredAt", 62, 76);
+            // Floors add up to 908 (about 1135 px at 125%), well below the grid's
+            // 1154 designed width (about 1318 px at 125%), so there is no
+            // horizontal scrollbar and every value has room. Weights equal the
+            // floors on purpose: when a weight's share falls below its floor,
+            // DataGridView pins that column at the floor but still hands the
+            // others their full share, and the row overflows.
+            UiTheme.SizeColumn(dgvPharmacies, "PharmacyId", 32, 32);
+            UiTheme.SizeColumn(dgvPharmacies, "PharmacyName", 128, 128);
+            UiTheme.SizeColumn(dgvPharmacies, "OwnerName", 95, 95);
+            UiTheme.SizeColumn(dgvPharmacies, "LicenseNo", 110, 110);
+            UiTheme.SizeColumn(dgvPharmacies, "Area", 84, 84);
+            UiTheme.SizeColumn(dgvPharmacies, "ContactPhone", 100, 100);
+            UiTheme.SizeColumn(dgvPharmacies, "CommissionRate", 56, 56);
+            UiTheme.SizeColumn(dgvPharmacies, "Status", 76, 76);
+            UiTheme.SizeColumn(dgvPharmacies, "Orders", 54, 54);
+            UiTheme.SizeColumn(dgvPharmacies, "AverageRating", 52, 52);
+            UiTheme.SizeColumn(dgvPharmacies, "WarningState", 121, 121);
         }
 
-        /// <summary>Status colour coding, so the queue reads at a glance.</summary>
+        /// <summary>
+        /// Status colour coding, so the queue reads at a glance, plus the full
+        /// warning text as the Warning cell's tooltip (the cell shows only the
+        /// date and whether the owner has read it).
+        /// </summary>
         private void dgvPharmacies_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
             if (e.RowIndex < 0 || !dgvPharmacies.Columns.Contains("Status")) return;
@@ -208,6 +230,20 @@ namespace PharmaLinkApp.Forms
                     e.CellStyle.BackColor = UiTheme.InactiveBack;
                     break;
             }
+        }
+
+        /// <summary>
+        /// The Warning cell only shows the date and whether the owner has read
+        /// it; hovering it shows the full text the Super Admin sent.
+        /// </summary>
+        private void dgvPharmacies_CellToolTipTextNeeded(object sender, DataGridViewCellToolTipTextNeededEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (!dgvPharmacies.Columns.Contains("WarningMessage") ||
+                dgvPharmacies.Columns[e.ColumnIndex].Name != "WarningState") return;
+
+            object warning = dgvPharmacies.Rows[e.RowIndex].Cells["WarningMessage"].Value;
+            if (warning != null && warning != DBNull.Value) e.ToolTipText = warning.ToString();
         }
 
         private void SelectPharmacy(int pharmacyId)

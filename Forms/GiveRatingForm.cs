@@ -114,7 +114,10 @@ namespace PharmaLinkApp.Forms
 
             foreach (DataRow row in table.Rows)
             {
-                cmbMedicine.Items.Add(row["MedicineId"] + " - " + row["MedicineName"] + " " + row["Strength"]);
+                // The id travels inside the ListItem, so the customer reads only "Seclo 20mg".
+                cmbMedicine.Items.Add(new ListItem(
+                    Convert.ToInt32(row["MedicineId"]),
+                    (Convert.ToString(row["MedicineName"]) + " " + Convert.ToString(row["Strength"])).Trim()));
             }
 
             cmbMedicine.SelectedIndex = 0;
@@ -139,9 +142,7 @@ namespace PharmaLinkApp.Forms
 
         private int SelectedMedicineId()
         {
-            if (cmbMedicine.SelectedIndex <= 0) return 0;
-            string text = cmbMedicine.SelectedItem.ToString();
-            return int.Parse(text.Substring(0, text.IndexOf(' ')));
+            return cmbMedicine.SelectedItem is ListItem item ? item.Id : 0;
         }
 
         // ---------------------------------------------------------------------

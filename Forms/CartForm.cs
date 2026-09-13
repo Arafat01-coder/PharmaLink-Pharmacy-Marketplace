@@ -41,6 +41,9 @@ namespace PharmaLinkApp.Forms
             ApplyTheme();
             UiTheme.MakeResizable(this, Size);
             LoadCart();
+
+            // The grid only gets a real CurrentRow once the window is on screen.
+            Shown += (s, args) => UpdateLineButtons();
         }
 
         private static decimal DeliveryCharge
@@ -126,7 +129,8 @@ namespace PharmaLinkApp.Forms
                     if (dgvCart.Columns.Count > 0)
                     {
                         dgvCart.Columns["CartId"].Visible = false;
-                        dgvCart.Columns["MedicineId"].HeaderText = "ID";
+                        // Kept for selection and updates, but a customer never needs to read it.
+                        dgvCart.Columns["MedicineId"].Visible = false;
                         dgvCart.Columns["MedicineName"].HeaderText = "Medicine";
                         dgvCart.Columns["Strength"].HeaderText = "Strength";
                         dgvCart.Columns["PharmacyId"].Visible = false;
@@ -141,20 +145,24 @@ namespace PharmaLinkApp.Forms
                         dgvCart.Columns["RequiresRx"].HeaderText = "Rx";
                         dgvCart.Columns["CanBuy"].Visible = false;
 
-                        UiTheme.SizeColumn(dgvCart, "MedicineId", 28, 40);
-                        UiTheme.SizeColumn(dgvCart, "MedicineName", 100, 110);
-                        UiTheme.SizeColumn(dgvCart, "Strength", 45, 60);
-                        UiTheme.SizeColumn(dgvCart, "PharmacyName", 90, 110);
-                        UiTheme.SizeColumn(dgvCart, "Quantity", 30, 40);
-                        UiTheme.SizeColumn(dgvCart, "ListPrice", 42, 60);
-                        UiTheme.SizeColumn(dgvCart, "DiscountPercent", 32, 45);
-                        UiTheme.SizeColumn(dgvCart, "PriceYouPay", 48, 70);
-                        UiTheme.SizeColumn(dgvCart, "LineTotal", 52, 80);
-                        UiTheme.SizeColumn(dgvCart, "Stock", 38, 55);
-                        UiTheme.SizeColumn(dgvCart, "RequiresRx", 24, 34);
+                        // Floors are DPI-scaled by SizeColumn and add up to less than
+                        // the grid's width, so the cart fits without a horizontal scrollbar.
+                        UiTheme.SizeColumn(dgvCart, "MedicineName", 100, 90);
+                        UiTheme.SizeColumn(dgvCart, "Strength", 45, 55);
+                        UiTheme.SizeColumn(dgvCart, "PharmacyName", 90, 90);
+                        UiTheme.SizeColumn(dgvCart, "Quantity", 30, 36);
+                        UiTheme.SizeColumn(dgvCart, "ListPrice", 42, 52);
+                        UiTheme.SizeColumn(dgvCart, "DiscountPercent", 32, 40);
+                        UiTheme.SizeColumn(dgvCart, "PriceYouPay", 48, 60);
+                        UiTheme.SizeColumn(dgvCart, "LineTotal", 52, 66);
+                        UiTheme.SizeColumn(dgvCart, "Stock", 38, 52);
+                        UiTheme.SizeColumn(dgvCart, "RequiresRx", 24, 30);
                     }
 
                     SelectLine(selectMedicineId);
+
+                    // Hiding MedicineId above cleared the current cell; restore it.
+                    UiTheme.EnsureCurrentCell(dgvCart, "MedicineName");
                 }
                 finally
                 {
@@ -313,15 +321,30 @@ namespace PharmaLinkApp.Forms
             // reload does not throw away what the customer has just typed.
             if (medicineId != _quantityShownFor)
             {
-                txtQuantity.Text = hasRow ? Convert.ToString(dgvCart.CurrentRow.Cells["Quantity"].Value) : "";
+                txtQuantity.Text = hasRow ? Convert.ToString(SelectedLineRow().Cells["Quantity"].Value) : "";
                 _quantityShownFor = medicineId;
             }
         }
 
+        /// <summary>
+        /// The cart line the customer is working on. CurrentRow is still null
+        /// while the form is loading, even though the grid already paints its
+        /// first row as selected, so the highlighted row is used as a fallback;
+        /// without it the Update and Remove buttons stayed disabled beside a row
+        /// that looked selected.
+        /// </summary>
+        private DataGridViewRow SelectedLineRow()
+        {
+            if (dgvCart.Columns.Count == 0) return null;
+            if (dgvCart.CurrentRow != null) return dgvCart.CurrentRow;
+            return dgvCart.SelectedRows.Count > 0 ? dgvCart.SelectedRows[0] : null;
+        }
+
         private int SelectedMedicineId()
         {
-            if (dgvCart.CurrentRow == null || dgvCart.Columns.Count == 0) return 0;
-            object value = dgvCart.CurrentRow.Cells["MedicineId"].Value;
+            DataGridViewRow row = SelectedLineRow();
+            if (row == null) return 0;
+            object value = row.Cells["MedicineId"].Value;
             return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
         }
 
@@ -369,7 +392,7 @@ namespace PharmaLinkApp.Forms
             int medicineId = SelectedMedicineId();
             if (medicineId == 0) return;
 
-            string name = Convert.ToString(dgvCart.CurrentRow.Cells["MedicineName"].Value);
+            string name = Convert.ToString(SelectedLineRow().Cells["MedicineName"].Value);
 
             DialogResult answer = MessageBox.Show("Remove " + name + " from your cart?", "Remove line",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);

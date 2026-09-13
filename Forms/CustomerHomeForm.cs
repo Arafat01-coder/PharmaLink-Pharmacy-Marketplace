@@ -112,9 +112,13 @@ namespace PharmaLinkApp.Forms
 
         private void LoadFilters()
         {
+            // The Category and Pharmacy objects themselves go into the lists: their
+            // ToString() is the plain name a customer reads, and the selected
+            // object carries its id, so nothing has to be parsed back out of the
+            // text (the list used to show "8 - Baby Care").
             cmbCategory.Items.Add("All categories");
             foreach (Category category in _categories.GetActiveList())
-                cmbCategory.Items.Add(category.CategoryId + " - " + category.CategoryName);
+                cmbCategory.Items.Add(category);
 
             // The bands meet but never overlap: each minimum is inclusive and each
             // maximum exclusive, applied to the price after today's discount.
@@ -133,7 +137,7 @@ namespace PharmaLinkApp.Forms
 
             cmbPharmacy.Items.Add("All pharmacies");
             foreach (Pharmacy pharmacy in _pharmacies.GetApprovedList())
-                cmbPharmacy.Items.Add(pharmacy.PharmacyId + " - " + pharmacy.PharmacyName);
+                cmbPharmacy.Items.Add(pharmacy);
 
             cmbAvailability.Items.AddRange(new object[] { "Any", "In stock" });
 
@@ -156,16 +160,12 @@ namespace PharmaLinkApp.Forms
 
         private int SelectedCategoryId()
         {
-            if (cmbCategory.SelectedIndex <= 0) return 0;
-            string text = cmbCategory.SelectedItem.ToString();
-            return int.Parse(text.Substring(0, text.IndexOf(' ')));
+            return cmbCategory.SelectedItem is Category category ? category.CategoryId : 0;
         }
 
         private int SelectedPharmacyId()
         {
-            if (cmbPharmacy.SelectedIndex <= 0) return 0;
-            string text = cmbPharmacy.SelectedItem.ToString();
-            return int.Parse(text.Substring(0, text.IndexOf(' ')));
+            return cmbPharmacy.SelectedItem is Pharmacy pharmacy ? pharmacy.PharmacyId : 0;
         }
 
         /// <summary>
@@ -235,6 +235,10 @@ namespace PharmaLinkApp.Forms
                     dgvMedicines.DataSource = table;
                     LabelColumns();
                     SelectMedicine(selectMedicineId);
+
+                    // Hiding MedicineId in LabelColumns cleared the current cell;
+                    // restore it so Add to cart works without clicking a row first.
+                    UiTheme.EnsureCurrentCell(dgvMedicines, "MedicineName");
                 }
                 finally
                 {

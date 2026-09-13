@@ -35,6 +35,13 @@ namespace PharmaLinkApp.Services
         /// Requirement 2 and 3: every pharmacy with its owner, licence, area and
         /// status, plus its order count so the screen knows whether Delete is
         /// possible.
+        ///
+        /// WarningState is the current warning boiled down to a short cell,
+        /// "Warned 13 Sep 26" while the owner has not read it and
+        /// "Read 14 Sep 26" once they have, or empty for a shop never warned.
+        /// It is built here rather than in the form so the grid can stay a
+        /// plain binding; the culture is pinned so the month is always English.
+        /// WarningMessage comes along for the cell's tooltip.
         /// </summary>
         public DataTable Search(string keyword, string status, string area)
         {
@@ -46,7 +53,12 @@ SELECT  p.PharmacyId, p.PharmacyName, u.FullName AS OwnerName, u.Email AS OwnerE
         ISNULL((SELECT CAST(AVG(CAST(r.Rating AS DECIMAL(4,2))) AS DECIMAL(4,2))
                 FROM   Reviews r
                        INNER JOIN Medicines m2 ON m2.MedicineId = r.MedicineId
-                WHERE  m2.PharmacyId = p.PharmacyId AND r.IsHidden = 0), 0) AS AverageRating
+                WHERE  m2.PharmacyId = p.PharmacyId AND r.IsHidden = 0), 0) AS AverageRating,
+        CASE WHEN p.WarnedAt IS NULL              THEN ''
+             WHEN p.WarningAcknowledgedAt IS NULL THEN 'Warned ' + FORMAT(p.WarnedAt, 'dd MMM yy', 'en-US')
+             ELSE 'Read ' + FORMAT(p.WarningAcknowledgedAt, 'dd MMM yy', 'en-US')
+        END AS WarningState,
+        p.WarningMessage
 FROM    Pharmacies p
         INNER JOIN Users u ON u.UserId = p.OwnerId
 WHERE   (@Keyword = '' OR p.PharmacyName LIKE '%' + @Keyword + '%'
@@ -140,6 +152,16 @@ DECLARE @Rows INT = 0;
 BEGIN TRY
     BEGIN TRANSACTION;
 
+    -- Lock the owner's Users row BEFORE the Pharmacies row. AuthService.SetUserStatus
+    -- locks Users first and Pharmacies second, and taking the two in the same
+    -- order everywhere is what stops a Super Admin suspending the owner and
+    -- another reinstating the shop at the same moment from deadlocking.
+    DECLARE @OwnerId INT = (SELECT OwnerId FROM Pharmacies WHERE PharmacyId = @PharmacyId);
+
+    SELECT  @OwnerId = u.UserId
+    FROM    Users u WITH (UPDLOCK, HOLDLOCK)
+    WHERE   u.UserId = @OwnerId;
+
     UPDATE  Pharmacies
     SET     Status = @ToStatus
     WHERE   PharmacyId = @PharmacyId
@@ -149,7 +171,7 @@ BEGIN TRY
     IF @Rows = 1
         UPDATE  Users
         SET     Status = @OwnerStatus
-        WHERE   UserId = (SELECT OwnerId FROM Pharmacies WHERE PharmacyId = @PharmacyId);
+        WHERE   UserId = @OwnerId;
 
     COMMIT TRANSACTION;
 END TRY
@@ -279,6 +301,90 @@ SELECT @Rows;";
                 "UPDATE Pharmacies SET CommissionRate = @Rate WHERE PharmacyId = @Id;",
                 DbHelper.P("@Rate", rate),
                 DbHelper.P("@Id", pharmacyId)) == 1;
+        }
+
+        // ---------------------------------------------------------------------
+        //  WARNINGS  (Super Admin -> pharmacy owner)
+        //  A pharmacy holds at most one current warning in three columns on
+        //  Pharmacies. A warning is a notice, not a sanction: it changes no
+        //  status and hides nothing, so it can be sent to a shop in any state.
+        // ---------------------------------------------------------------------
+
+        /// <summary>Shortest and longest warning text accepted, matching NVARCHAR(500) on Pharmacies.WarningMessage.</summary>
+        public const int WarningMinLength = 10;
+        public const int WarningMaxLength = 500;
+
+        /// <summary>
+        /// Sends (or replaces) the pharmacy's warning. Overwriting rather than
+        /// keeping a history is deliberate: the owner's banner shows exactly one
+        /// notice, and clearing WarningAcknowledgedAt makes a repeated warning
+        /// show again even if the previous one was already read.
+        /// Returns the number of pharmacies changed: 1, or 0 when the text is
+        /// outside the allowed length or the pharmacy no longer exists.
+        /// </summary>
+        public int WarnPharmacy(int pharmacyId, string message)
+        {
+            string text = (message ?? "").Trim();
+            if (text.Length < WarningMinLength || text.Length > WarningMaxLength) return 0;
+
+            const string sql = @"
+UPDATE  Pharmacies
+SET     WarningMessage        = @Message,
+        WarnedAt              = SYSDATETIME(),
+        WarningAcknowledgedAt = NULL
+WHERE   PharmacyId = @Id;";
+
+            return _db.ExecuteNonQuery(sql,
+                DbHelper.P("@Message", text),
+                DbHelper.P("@Id", pharmacyId));
+        }
+
+        /// <summary>
+        /// The pharmacy's current warning, for the owner's dashboard banner.
+        /// Returns null when the pharmacy does not exist; otherwise a Pharmacy
+        /// carrying only its id, name and the three warning fields (WarnedAt is
+        /// null when the shop has never been warned). HasUnreadWarning on the
+        /// result says whether the banner should show.
+        /// </summary>
+        public Pharmacy GetWarning(int pharmacyId)
+        {
+            const string sql = @"
+SELECT  PharmacyId, PharmacyName, WarningMessage, WarnedAt, WarningAcknowledgedAt
+FROM    Pharmacies
+WHERE   PharmacyId = @Id;";
+
+            DataTable table = _db.ExecuteTable(sql, DbHelper.P("@Id", pharmacyId));
+            if (table.Rows.Count == 0) return null;
+
+            DataRow row = table.Rows[0];
+            return new Pharmacy
+            {
+                PharmacyId = DbHelper.GetInt(row, "PharmacyId"),
+                PharmacyName = DbHelper.GetString(row, "PharmacyName"),
+                WarningMessage = DbHelper.GetString(row, "WarningMessage"),
+                WarnedAt = row["WarnedAt"] == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(row["WarnedAt"]),
+                WarningAcknowledgedAt = row["WarningAcknowledgedAt"] == DBNull.Value
+                    ? (DateTime?)null : Convert.ToDateTime(row["WarningAcknowledgedAt"])
+            };
+        }
+
+        /// <summary>
+        /// The owner's "I've read this". The WHERE carries the owner's own
+        /// PharmacyId (requirement 18) and WarningAcknowledgedAt IS NULL, so the
+        /// first acknowledgement time is kept - the Super Admin sees when the
+        /// owner really read it, not when they last clicked. Returns false when
+        /// nothing changed (already acknowledged, or no such pharmacy).
+        /// </summary>
+        public bool AcknowledgeWarning(int pharmacyId)
+        {
+            const string sql = @"
+UPDATE  Pharmacies
+SET     WarningAcknowledgedAt = SYSDATETIME()
+WHERE   PharmacyId = @Id
+  AND   WarnedAt IS NOT NULL
+  AND   WarningAcknowledgedAt IS NULL;";
+
+            return _db.ExecuteNonQuery(sql, DbHelper.P("@Id", pharmacyId)) == 1;
         }
 
         // ---------------------------------------------------------------------

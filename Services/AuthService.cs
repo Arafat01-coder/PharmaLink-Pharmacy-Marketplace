@@ -1,4 +1,5 @@
 using System.Data;
+using System.Security.Cryptography;
 using Microsoft.Data.SqlClient;
 using PharmaLinkApp.Database;
 using PharmaLinkApp.Helpers;
@@ -8,7 +9,8 @@ namespace PharmaLinkApp.Services
 {
     /// <summary>
     /// Everything to do with getting into the system: login, registration,
-    /// profile editing and password change.
+    /// profile editing, password change, and the help-desk "forgot password"
+    /// flow (request, temporary password, forced change at the next login).
     ///
     /// There is no separate administrator login. All three roles come through
     /// the same query, and the UserType it returns is what decides which
@@ -25,10 +27,16 @@ namespace PharmaLinkApp.Services
         public const int LockoutMinutes = 15;
 
         /// <summary>
-        /// The one message for an unknown email and for a wrong password, so the
-        /// login screen cannot be used to find out which emails are registered.
+        /// The one message for an unknown email, a wrong password and a locked
+        /// account, so the login screen cannot be used to find out which emails
+        /// are registered. It states the lockout rule, so a genuine user who
+        /// has been locked out still knows to wait.
         /// </summary>
-        public const string BadCredentialsMessage = "Email or password is incorrect.";
+        /// (The numbers are written out because C# cannot build a const string
+        /// from int constants; keep them in step with MaxFailedLogins and
+        /// LockoutMinutes above.)
+        public const string BadCredentialsMessage =
+            "Email or password is incorrect. After 5 wrong attempts in a row an account is locked for 15 minutes.";
 
         // ---------------------------------------------------------------------
         //  LOGIN
@@ -60,7 +68,7 @@ namespace PharmaLinkApp.Services
             const string sql = @"
 SELECT  u.UserId, u.FullName, u.Email, u.PasswordHash, u.PasswordSalt,
         u.Phone, u.Address, u.UserType, u.Status, u.CreatedAt,
-        u.FailedLoginCount,
+        u.FailedLoginCount, u.MustChangePassword,
         CASE WHEN u.LockoutUntil > SYSDATETIME()
              THEN DATEDIFF(SECOND, SYSDATETIME(), u.LockoutUntil) ELSE 0 END AS LockoutSeconds,
         p.PharmacyId, p.PharmacyName, p.Status AS PharmacyStatus
@@ -85,7 +93,11 @@ WHERE   u.Email = @Email;";
             int lockoutSeconds = DbHelper.GetInt(row, "LockoutSeconds");
             if (lockoutSeconds > 0)
             {
-                failureReason = LockoutMessage(lockoutSeconds);
+                // Same message and the same PBKDF2 work as an unknown email or a
+                // wrong password: a distinct "locked" reply, or a faster one,
+                // would confirm that the email belongs to a real account.
+                PasswordHelper.Hash(password, "AAAAAAAAAAAAAAAAAAAAAA==");
+                failureReason = BadCredentialsMessage;
                 return null;
             }
 
@@ -94,7 +106,10 @@ WHERE   u.Email = @Email;";
 
             if (!PasswordHelper.Verify(password, salt, hash))
             {
-                failureReason = RecordFailedLogin(userId);
+                // The counter still advances and locks the account on the fifth
+                // failure, but the reply stays the generic one for the same reason.
+                RecordFailedLogin(userId);
+                failureReason = BadCredentialsMessage;
                 return null;
             }
 
@@ -154,7 +169,11 @@ WHERE   u.Email = @Email;";
                 Status = status,
                 CreatedAt = DbHelper.GetDate(row, "CreatedAt"),
                 PharmacyId = DbHelper.GetInt(row, "PharmacyId"),
-                PharmacyName = DbHelper.GetString(row, "PharmacyName")
+                PharmacyName = DbHelper.GetString(row, "PharmacyName"),
+                // Read here, acted on by LoginForm: the password was right, so
+                // this is a real login, but no dashboard may open until the
+                // temporary password has been replaced.
+                MustChangePassword = DbHelper.GetBool(row, "MustChangePassword")
             };
         }
 
@@ -464,6 +483,10 @@ WHERE   UserId = @UserId;";
         /// between, no row is updated and the method returns false instead of
         /// silently overwriting that change. False therefore means "wrong
         /// current password, unknown user, or changed concurrently".
+        ///
+        /// The same UPDATE clears MustChangePassword: a user who replaces a
+        /// temporary password from My Account has done exactly what the forced
+        /// change at login asks for, so they must not be asked again.
         /// </summary>
         public bool ChangePassword(int userId, string currentPassword, string newPassword)
         {
@@ -484,7 +507,8 @@ WHERE   UserId = @UserId;";
             const string sql = @"
 UPDATE  Users
 SET     PasswordHash = @NewHash, PasswordSalt = @NewSalt,
-        FailedLoginCount = 0, LockoutUntil = NULL
+        FailedLoginCount = 0, LockoutUntil = NULL,
+        MustChangePassword = 0
 WHERE   UserId = @UserId AND PasswordHash = @OldStoredHash;";
 
             return _db.ExecuteNonQuery(sql,
@@ -492,6 +516,163 @@ WHERE   UserId = @UserId AND PasswordHash = @OldStoredHash;";
                 DbHelper.P("@NewSalt", newSalt),
                 DbHelper.P("@UserId", userId),
                 DbHelper.P("@OldStoredHash", storedHash)) == 1;
+        }
+
+        // ---------------------------------------------------------------------
+        //  FORGOTTEN PASSWORD (help-desk reset through the Super Admin)
+        //
+        //  PharmaLink has no email or SMS service, so a reset cannot be mailed
+        //  out. Instead:
+        //   1. the user asks from the login screen, proving nothing more than
+        //      that they know the account's email AND registered mobile number;
+        //   2. the Super Admin sees the request on Manage Users, phones that
+        //      registered number, and issues a random temporary password;
+        //   3. the next login with it is forced to choose a new password
+        //      before any dashboard opens.
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// The one reply to every reset request, matched or not, so the form
+        /// cannot be used to find out which email and mobile pairs are real.
+        /// </summary>
+        public const string PasswordResetRequestedMessage =
+            "If those details match an account, your request has been sent to the PharmaLink administrator, " +
+            "who will contact you on your registered mobile number with a temporary password.";
+
+        /// <summary>
+        /// Records a "forgot password" request and always returns
+        /// PasswordResetRequestedMessage.
+        ///
+        /// Exactly one parameterised UPDATE runs whatever was typed, so a match
+        /// and a miss cost the same round trip and the response time gives
+        /// nothing away. It only touches an Active or Suspended Admin or
+        /// Customer whose Email and Phone BOTH match: a Pending registration
+        /// has nothing to reset yet, and the Super Admin account is never reset
+        /// through a form anyone can reach from the login screen.
+        ///
+        /// A request that is already waiting keeps its original timestamp
+        /// (ISNULL), so pressing Submit again cannot push an old request down
+        /// the Super Admin's list or make it look newer than it is.
+        /// </summary>
+        public string RequestPasswordReset(string email, string mobile)
+        {
+            const string sql = @"
+UPDATE  Users
+SET     PasswordResetRequestedAt = ISNULL(PasswordResetRequestedAt, SYSDATETIME())
+WHERE   Email = @Email
+  AND   Phone = @Phone
+  AND   UserType IN ('Admin', 'Customer')
+  AND   Status   IN ('Active', 'Suspended');";
+
+            _db.ExecuteNonQuery(sql,
+                DbHelper.P("@Email", (email ?? "").Trim()),
+                DbHelper.P("@Phone", (mobile ?? "").Trim()));
+
+            // The row count is deliberately ignored: the caller must not be
+            // able to tell a match from a miss.
+            return PasswordResetRequestedMessage;
+        }
+
+        /// <summary>Reset requests still waiting for the Super Admin, for the dashboard.</summary>
+        public int CountPendingPasswordResets()
+        {
+            return _db.ExecuteScalarInt(@"
+SELECT COUNT(*) FROM Users
+WHERE  PasswordResetRequestedAt IS NOT NULL AND UserType IN ('Admin', 'Customer');");
+        }
+
+        /// <summary>
+        /// Letters and digits a person can read aloud over the phone without
+        /// confusion: no I, l, i, O, o, 0 or 1.
+        /// </summary>
+        private const string TempLetters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz";
+        private const string TempDigits = "23456789";
+        private const int TempPasswordLength = 10;
+
+        /// <summary>
+        /// Super Admin only. Replaces an Admin's or Customer's password with a
+        /// random temporary one and returns it in tempPassword, which the caller
+        /// shows once and never stores or logs.
+        ///
+        /// One UPDATE, so nothing can be half done: the new hash under a brand
+        /// new salt, MustChangePassword = 1 (the next login must replace it),
+        /// the reset request cleared, and the lockout lifted so a user who
+        /// locked themselves out guessing can sign in with it straight away.
+        /// The WHERE clause refuses the SuperAdmin row even if a caller passes
+        /// its id. Returns false (tempPassword empty) when no row was changed.
+        /// </summary>
+        public bool IssueTemporaryPassword(int userId, out string tempPassword)
+        {
+            string candidate = GenerateTemporaryPassword();
+            string salt = PasswordHelper.CreateSalt();
+            string hash = PasswordHelper.Hash(candidate, salt);
+
+            const string sql = @"
+UPDATE  Users
+SET     PasswordHash             = @Hash,
+        PasswordSalt             = @Salt,
+        MustChangePassword       = 1,
+        PasswordResetRequestedAt = NULL,
+        FailedLoginCount         = 0,
+        LockoutUntil             = NULL
+WHERE   UserId = @UserId
+  AND   UserType IN ('Admin', 'Customer');";
+
+            int changed = _db.ExecuteNonQuery(sql,
+                DbHelper.P("@Hash", hash),
+                DbHelper.P("@Salt", salt),
+                DbHelper.P("@UserId", userId));
+
+            tempPassword = changed == 1 ? candidate : "";
+            return changed == 1;
+        }
+
+        /// <summary>
+        /// Ten characters from the unambiguous alphabet, drawn with the
+        /// cryptographic RandomNumberGenerator (System.Random is predictable).
+        /// A draw without at least one letter and one digit is thrown away and
+        /// drawn again - rather than forcing a character into a fixed position -
+        /// so every accepted password is equally likely and it always satisfies
+        /// Validator.IsStrongPassword.
+        /// </summary>
+        private static string GenerateTemporaryPassword()
+        {
+            string alphabet = TempLetters + TempDigits;
+            char[] chars = new char[TempPasswordLength];
+
+            while (true)
+            {
+                for (int i = 0; i < chars.Length; i++)
+                    chars[i] = alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)];
+
+                string candidate = new string(chars);
+                if (candidate.Any(char.IsLetter) && candidate.Any(char.IsDigit))
+                {
+                    Array.Clear(chars);
+                    return candidate;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The forced change at login. Verifies the temporary password again,
+        /// then writes the new hash under a fresh salt and clears
+        /// MustChangePassword, all in ChangePassword's single UPDATE that is
+        /// guarded by the old hash - so if the Super Admin issued yet another
+        /// temporary password in the meantime, nothing is overwritten.
+        ///
+        /// The rules are checked here as well as on the form (at least 8
+        /// characters with a letter and a digit, and not the temporary password
+        /// itself), so no caller can clear the flag with a weak password.
+        /// False means a rule failed, the temporary password no longer matches,
+        /// or the account is gone.
+        /// </summary>
+        public bool CompleteRequiredPasswordChange(int userId, string currentTempPassword, string newPassword)
+        {
+            if (!Validator.IsStrongPassword(newPassword)) return false;
+            if (newPassword == currentTempPassword) return false;
+
+            return ChangePassword(userId, currentTempPassword, newPassword);
         }
 
         // ---------------------------------------------------------------------
@@ -503,26 +684,35 @@ WHERE   UserId = @UserId AND PasswordHash = @OldStoredHash;";
         /// name and its status filled in beside an owner's row through a LEFT
         /// JOIN. An empty keyword or status means "no filter" rather than
         /// "no results".
+        ///
+        /// PasswordResetRequestedAt is returned (NULL when no request is
+        /// waiting) and waiting requests sort to the top, oldest first, so the
+        /// Super Admin sees the queue without hunting for it.
+        /// resetRequestedOnly narrows the list to those requests.
         /// </summary>
-        public DataTable SearchUsers(string keyword, string status, string userType)
+        public DataTable SearchUsers(string keyword, string status, string userType, bool resetRequestedOnly = false)
         {
             const string sql = @"
 SELECT  u.UserId, u.FullName, u.Email, u.Phone, u.UserType, u.Status,
         ISNULL(p.PharmacyName, '-') AS PharmacyName,
         ISNULL(p.Status, '-')       AS PharmacyStatus,
-        u.CreatedAt
+        u.CreatedAt,
+        u.PasswordResetRequestedAt
 FROM    Users u
         LEFT JOIN Pharmacies p ON p.OwnerId = u.UserId
 WHERE   u.UserType <> 'SuperAdmin'
   AND   (@Keyword  = '' OR u.FullName LIKE '%' + @Keyword + '%' OR u.Email LIKE '%' + @Keyword + '%')
   AND   (@Status   = '' OR u.Status   = @Status)
   AND   (@UserType = '' OR u.UserType = @UserType)
-ORDER BY u.UserType, u.FullName;";
+  AND   (@ResetOnly = 0 OR u.PasswordResetRequestedAt IS NOT NULL)
+ORDER BY CASE WHEN u.PasswordResetRequestedAt IS NULL THEN 1 ELSE 0 END,
+         u.PasswordResetRequestedAt, u.UserType, u.FullName;";
 
             return _db.ExecuteTable(sql,
                 DbHelper.P("@Keyword", keyword ?? ""),
                 DbHelper.P("@Status", status ?? ""),
-                DbHelper.P("@UserType", userType ?? ""));
+                DbHelper.P("@UserType", userType ?? ""),
+                DbHelper.P("@ResetOnly", resetRequestedOnly ? 1 : 0));
         }
 
         /// <summary>

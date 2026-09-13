@@ -91,6 +91,18 @@ namespace PharmaLinkApp.Forms
             UiTheme.StyleSuccess(btnApprove);
             UiTheme.StyleDanger(btnReject);
             UiTheme.StyleSecondary(btnOpenPharmacies);
+
+            // A link-style line rather than a fifth tile: the tile row is
+            // sized for four, and a waiting reset request is a to-do, not a KPI.
+            btnResetRequests.FlatStyle = FlatStyle.Flat;
+            btnResetRequests.FlatAppearance.BorderSize = 0;
+            btnResetRequests.FlatAppearance.MouseOverBackColor = UiTheme.PageBack;
+            btnResetRequests.FlatAppearance.MouseDownBackColor = UiTheme.PageBack;
+            btnResetRequests.BackColor = UiTheme.PageBack;
+            btnResetRequests.ForeColor = UiTheme.Accent;
+            btnResetRequests.Font = UiTheme.FontBodyBold;
+            btnResetRequests.Cursor = Cursors.Hand;
+            btnResetRequests.UseVisualStyleBackColor = false;
         }
 
         /// <summary>
@@ -133,8 +145,19 @@ namespace PharmaLinkApp.Forms
                 _tileOrders.Text = orders.ToString();
                 _tileCommission.Text = UiTheme.Money(commission);
 
+                // Forgotten-password requests wait for the Super Admin to phone
+                // the user, so they are surfaced here as well as on Manage Users.
+                int resetRequests = _auth.CountPendingPasswordResets();
+
                 lblHeaderSub.Text = "Item sales (confirmed + delivered) " + UiTheme.Money(revenue) +
-                                    "   |   " + pending + " pharmacy registration(s) waiting for approval";
+                                    "   |   " + pending + " pharmacy registration(s) waiting for approval" +
+                                    (resetRequests > 0
+                                        ? "   |   " + resetRequests + " password reset request(s)"
+                                        : "");
+
+                btnResetRequests.Text = resetRequests + " password reset request" + (resetRequests == 1 ? "" : "s") +
+                                        " waiting  -  open Manage Users";
+                btnResetRequests.Visible = resetRequests > 0;
 
                 dgvPending.DataSource = _pharmacies.GetPending();
                 LabelPendingColumns();
@@ -351,6 +374,7 @@ namespace PharmaLinkApp.Forms
 
         private void btnManagePharmacies_Click(object sender, EventArgs e) => OpenChild(new SuperAdminManageShopsForm(0));
         private void btnManageUsers_Click(object sender, EventArgs e) => OpenChild(new SuperAdminManageUsersForm());
+        private void btnResetRequests_Click(object sender, EventArgs e) => OpenChild(new SuperAdminManageUsersForm(true));
         private void btnCategories_Click(object sender, EventArgs e) => OpenChild(new ManageCategoriesForm());
         private void btnSalesReport_Click(object sender, EventArgs e) => OpenChild(new SuperAdminSalesReportForm());
         private void btnLowRated_Click(object sender, EventArgs e) => OpenChild(new SuperAdminLowRatedShopsForm());

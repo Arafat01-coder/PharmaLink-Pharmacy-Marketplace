@@ -15,6 +15,13 @@ namespace PharmaLinkApp.Forms
     /// UserType and that single value decides which of the three dashboards
     /// opens. No arrow in the navigation diagram ever crosses from one role
     /// branch into another.
+    ///
+    /// Two gates sit between a correct password and the dashboard:
+    ///  - an account signed in with a temporary password the Super Admin
+    ///    issued (User.MustChangePassword) must choose a new one first, in
+    ///    ChangePasswordRequiredForm; cancelling it abandons the login;
+    ///  - "Remember my email" is saved or forgotten (LoginPreferences) only once
+    ///    the dashboard is actually about to open.
     /// </summary>
     public partial class LoginForm : Form
     {
@@ -29,7 +36,21 @@ namespace PharmaLinkApp.Forms
         {
             ApplyTheme();
             UserSession.Clear();
-            txtEmail.Focus();
+
+            // A remembered email is pre-filled and the cursor waits in the
+            // password box, so a returning user only types the password.
+            string rememberedEmail = LoginPreferences.Load();
+            if (rememberedEmail.Length > 0)
+            {
+                txtEmail.Text = rememberedEmail;
+                chkRememberMe.Checked = true;
+                ActiveControl = txtPassword;
+            }
+            else
+            {
+                ActiveControl = txtEmail;
+            }
+
             ValidateFields();
         }
 
@@ -75,11 +96,33 @@ namespace PharmaLinkApp.Forms
             lblNoAccount.Font = UiTheme.FontSmall;
             lblNoAccount.ForeColor = UiTheme.TextMuted;
 
+            StyleAsLink(btnForgotPassword);
+
             UiTheme.StylePrimary(btnLogin);
             btnLogin.Font = UiTheme.FontButtonLarge;
             UiTheme.StyleSecondary(btnGoSignUp);
 
             AcceptButton = btnLogin;
+        }
+
+        /// <summary>
+        /// "Forgot password?" is a secondary action, so it reads as a link in the
+        /// accent colour rather than competing with the Log in button. It stays
+        /// a Button (keyboard focus, Enter/Space, UI Automation) and is only
+        /// dressed with theme colours: flat, no border, and a hover colour equal
+        /// to the card so it never flashes a grey box.
+        /// </summary>
+        private static void StyleAsLink(Button button)
+        {
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.MouseOverBackColor = UiTheme.CardBack;
+            button.FlatAppearance.MouseDownBackColor = UiTheme.CardBack;
+            button.BackColor = UiTheme.CardBack;
+            button.ForeColor = UiTheme.Accent;
+            button.Font = UiTheme.FontSmall;
+            button.Cursor = Cursors.Hand;
+            button.UseVisualStyleBackColor = false;
         }
 
         /// <summary>
@@ -195,18 +238,62 @@ namespace PharmaLinkApp.Forms
                 UserSession.PharmacyId = user.PharmacyId;
                 UserSession.PharmacyName = user.PharmacyName;
 
+                // A temporary password gets the user this far and no further.
+                if (user.MustChangePassword && !CompleteRequiredPasswordChange(user))
+                {
+                    UserSession.Clear();
+                    txtPassword.Clear();
+                    // Two lines at most: the label under Log in is 34 pixels tall.
+                    UiTheme.ShowError(lblFormError, null,
+                        "Not signed in. Log in again with your temporary password to choose a new one.");
+                    txtPassword.Focus();
+                    return;
+                }
+
+                RememberEmail(user.Email);
                 OpenDashboardFor(user.UserType);
             }
             catch (Exception ex)
             {
                 // Describe already says "could not reach the database" when that
                 // is the actual problem, and something else when it is not.
+                UserSession.Clear();
                 UiTheme.ShowError(lblFormError, null, DbHelper.Describe(ex).Replace("\r\n\r\n", " "));
             }
             finally
             {
                 Cursor = Cursors.Default;
             }
+        }
+
+        /// <summary>
+        /// Shows the forced password change and returns true only when the new
+        /// password was saved. The temporary password is handed over from the
+        /// password box it was just verified from, then cleared from that box.
+        /// </summary>
+        private bool CompleteRequiredPasswordChange(User user)
+        {
+            Cursor = Cursors.Default;
+            using (ChangePasswordRequiredForm dialog =
+                   new ChangePasswordRequiredForm(user.UserId, user.FullName, txtPassword.Text))
+            {
+                // The dashboard opening straight away is the confirmation; a
+                // message box on top would only be one more click.
+                bool changed = dialog.ShowDialog(this) == DialogResult.OK;
+                if (changed) txtPassword.Clear();
+                return changed;
+            }
+        }
+
+        /// <summary>
+        /// Saves the email when "Remember my email" is ticked and forgets it
+        /// when it is not, so unticking the box and signing in once is how a
+        /// user removes a remembered email. Never a password.
+        /// </summary>
+        private void RememberEmail(string email)
+        {
+            if (chkRememberMe.Checked) LoginPreferences.Save(email);
+            else LoginPreferences.Clear();
         }
 
         /// <summary>
@@ -248,7 +335,22 @@ namespace PharmaLinkApp.Forms
             lblFormError.Visible = false;
             Show();
             ValidateFields();
-            txtEmail.Focus();
+
+            if (chkRememberMe.Checked && Validator.IsEmail(txtEmail.Text)) txtPassword.Focus();
+            else txtEmail.Focus();
+        }
+
+        /// <summary>
+        /// Opens the help-desk reset request, passing on whatever email is
+        /// already typed. The login card itself is left exactly as it was.
+        /// </summary>
+        private void btnForgotPassword_Click(object sender, EventArgs e)
+        {
+            using (ForgotPasswordForm forgot = new ForgotPasswordForm(txtEmail.Text))
+            {
+                forgot.ShowDialog(this);
+            }
+            txtPassword.Focus();
         }
 
         private void btnGoSignUp_Click(object sender, EventArgs e)
@@ -260,7 +362,9 @@ namespace PharmaLinkApp.Forms
                 Show();
 
                 // A brand new customer lands straight back here with the email
-                // already typed in, so the first login is one click away.
+                // already typed in, so the first login is one click away. This
+                // deliberately replaces a remembered email: the account that was
+                // just created is the one the user means to sign in to now.
                 if (!string.IsNullOrEmpty(signUp.RegisteredEmail))
                 {
                     txtEmail.Text = signUp.RegisteredEmail;

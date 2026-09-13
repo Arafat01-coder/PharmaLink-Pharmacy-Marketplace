@@ -69,16 +69,16 @@ anywhere in the code:
 
 | Shown in the report | Where | In the code |
 |---|---|---|
-| **Forgot password?** link, and a *Forgot Password* form | Login screenshot; also a box in the Entry and Role Decision diagram | No `ForgotPasswordForm`, no handler |
-| **Remember me** checkbox | Login screenshot | Not present |
-| **Reorder** button | Order History screenshot | Not present |
-| **Save as PDF** button | Invoice screenshot | Not present (Print is, via `PrintDocument`) |
-| **Warn Pharmacy**, **Open Pharmacy Record** | Moderate Reviews screenshot | Not present |
+| **Forgot password?** link, and a *Forgot Password* form | Login screenshot; also a box in the Entry and Role Decision diagram | **Built** — `ForgotPasswordForm` sends a request the Super Admin handles in Manage Users (temporary password, forced change via `ChangePasswordRequiredForm`). The report implies self-service; the code uses a help desk because there is no email or SMS service. |
+| **Remember me** checkbox | Login screenshot | **Built** as *Remember my email* — the email only, never the password (`Helpers/LoginPreferences.cs`) |
+| **Reorder** button | Order History screenshot | **Built** — adds the order's lines to the cart at today's prices; anything delisted, expired, out of stock or from a shop that is no longer approved is skipped with its reason |
+| **Save as PDF** button | Invoice screenshot | **Built** — prints the same invoice document through Windows' *Microsoft Print to PDF* printer |
+| **Warn Pharmacy**, **Open Pharmacy Record** | Moderate Reviews screenshot | **Built** as *Warn pharmacy* (one current warning per shop, shown to the owner as a dashboard banner until acknowledged) and *Open pharmacy* (opens Manage Pharmacies on that shop) |
 
-**What to do.** Either build them — *Forgot Password* and *Reorder* are each an
-evening's work — or be ready to say which mockup controls were dropped during
-implementation and why. Dropping scope is normal; not knowing you dropped it is
-not.
+**What to say.** Every control in the report's screenshots now exists. Two differ
+in detail from the mockups — Forgot Password is a help-desk flow rather than a
+self-service one, and Remember me keeps the email only — and both are deliberate
+security choices worth explaining.
 
 ---
 
@@ -123,7 +123,7 @@ login"). Know this answer cold.
 |---|---|
 | `AdminProfileForm` (traceability table, requirement 17) | `MyProfileForm` and `PharmacyProfileForm` — no `AdminProfileForm` exists |
 | *"The complete INSERT section is in `database/schema.sql`"* (Section 7.1) | `PharmaLinkDB_Setup.sql`, in the repository root. There is no `database/` folder |
-| *"eighteen consistent form designs"* (Section 10) | 28 Windows Forms |
+| *"eighteen consistent form designs"* (Section 10) | 30 Windows Forms |
 
 ---
 
@@ -160,7 +160,7 @@ backed by the code, and you can prove each one on the spot:
 | Checkout is one transaction | `OrderService.cs` |
 | Commission frozen on the order row | `Orders.CommissionAmount`, written once at checkout |
 | Nothing concatenated into a query string | `Database/DbHelper.cs` — every method takes `SqlParameter[]` |
-| Passwords salted and SHA-256 hashed | `Helpers/PasswordHelper.cs` |
+| Passwords salted and hashed (the report says SHA-256; the code now uses PBKDF2-HMAC-SHA256 with 100,000 iterations and still accepts old SHA-256 hashes) | `Helpers/PasswordHelper.cs` |
 | `TotalAmount` and `Subtotal` are computed persisted columns | `PharmaLinkDB_Setup.sql` |
 | Review verified by `OrderId`, one per purchase | `UQ_Reviews_OneEach UNIQUE (CustomerId, MedicineId, OrderId)` |
 

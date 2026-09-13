@@ -45,7 +45,7 @@ namespace PharmaLinkApp.Forms
             {
                 cmbCategory.Items.Add("All categories");
                 foreach (Category category in _categories.GetActiveList())
-                    cmbCategory.Items.Add(category.CategoryId + " - " + category.CategoryName);
+                    cmbCategory.Items.Add(category);   // shows the name; the object carries the id
                 cmbCategory.SelectedIndex = 0;
 
                 cmbArea.Items.Add("All areas");
@@ -87,9 +87,7 @@ namespace PharmaLinkApp.Forms
 
         private int SelectedCategoryId()
         {
-            if (cmbCategory.SelectedIndex <= 0) return 0;
-            string text = cmbCategory.SelectedItem.ToString();
-            return int.Parse(text.Substring(0, text.IndexOf(' ')));
+            return cmbCategory.SelectedItem is Category category ? category.CategoryId : 0;
         }
 
         private void ShowError(string text)
@@ -123,6 +121,10 @@ namespace PharmaLinkApp.Forms
                     dgvOffers.DataSource = table;
                     LabelColumns();
                     SelectMedicine(keepMedicineId);
+
+                    // Hiding MedicineId in LabelColumns can clear the current cell;
+                    // restore it so Add to cart works without clicking a row first.
+                    UiTheme.EnsureCurrentCell(dgvOffers, "MedicineName");
                 }
                 finally
                 {

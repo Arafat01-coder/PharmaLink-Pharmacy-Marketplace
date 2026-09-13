@@ -174,7 +174,7 @@ Each story is written as *As a role, I can do something, so that business benefi
 ### Super Admin
 
 **1. As a Super Admin, I can sign in through the same login form as everyone else, so that the platform has one entry point and one place where access is decided.**
-There is no separate administrator login. The Super Admin types the same email and password into `LoginForm`, and the login query returns his `UserType` along with his account status. The form reads that value and opens the Super Admin dashboard; the same statement would open a pharmacy dashboard or a customer home for a different `UserType`. An account whose `Status` is Pending or Suspended is refused by the same check, so a suspended administrator cannot get in even with the correct credentials.
+There is no separate administrator login. The Super Admin types the same email and password into `LoginForm`, and the login query returns his `UserType` along with his account status. The form reads that value and opens the Super Admin dashboard; the same statement would open a pharmacy dashboard or a customer home for a different `UserType`. An account whose `Status` is Pending or Suspended is refused by the same check, so a suspended administrator cannot get in even with the correct credentials. The same form offers **Remember my email** (only the email is kept, in the user's local application data folder — never the password) and a **Forgot password?** link, described in story 4.
 
 **2. As a Super Admin, I can approve or reject a new pharmacy registration, so that only pharmacies with a valid drug licence can sell on the platform.**
 A DataGridView lists every pharmacy with its owner, licence number, area and status, and a Status ComboBox filters the grid down to Pending. Selecting a row enables the Approve and Suspend buttons; with no row selected both stay disabled. Approve runs an UPDATE that sets `Pharmacies.Status` to `'Approved'` and `Users.Status` to `'Active'`, after which the owner can log in and the pharmacy's medicines become visible to customers.
@@ -184,6 +184,7 @@ A modal confirmation dialog opens showing the pharmacy name and its average rati
 
 **4. As a Super Admin, I can search the full user list, so that I can find an account when a customer or an owner contacts support.**
 Manage Users shows every Admin and Customer in one grid, with the pharmacy name filled in beside an owner's row through a `LEFT JOIN` on `Pharmacies`. A free text box searches name and email, and a Status ComboBox filters to Pending, Active or Suspended; both are optional, and an empty box means *no filter* rather than *no results*.
+The same screen is the help desk for forgotten passwords. The platform has no email or SMS service, so a user who clicks **Forgot password?** enters their email and registered mobile number; when both match, `Users.PasswordResetRequestedAt` is set, and the reply is identical whether or not they matched, so the form cannot be used to discover accounts. Waiting requests are counted on the Super Admin dashboard and appear in a *Reset requested* column and filter here. **Reset password** generates a random ten character temporary password, stores only its PBKDF2 hash, sets `Users.MustChangePassword` to 1 and shows the password once, to be given to the user by phone. At the user's next login a modal dialog forces a new password before any dashboard opens; cancelling it signs them straight back out.
 
 **5. As a Super Admin, I can view total revenue and commission per pharmacy, so that I know what the platform has earned and what it owes.**
 The Platform Sales Report takes a date range, an area and an order status. Generate runs a query that joins `Pharmacies`, `Orders` and `OrderItems`, groups by pharmacy and returns order count, units sold, gross sales, commission and average item price, with a bold total row appended to the DataGridView. Export CSV writes the same result set to a file so it can be reconciled against bank settlements.
@@ -192,7 +193,7 @@ The Platform Sales Report takes a date range, an area and an order status. Gener
 The Low-Rated Pharmacies form runs a single query that joins `Pharmacies`, `Medicines` and `Reviews`, groups by pharmacy and applies `HAVING AVG(Rating) < 2.5 AND COUNT(ReviewId) >= 2`, so that one angry review cannot condemn a shop. Rows are tinted red. Double clicking a row opens that pharmacy in the Manage Pharmacies form with the record already selected.
 
 **7. As a Super Admin, I can hide an abusive review, so that the review section stays useful without destroying the audit trail.**
-The Moderate Reviews form defaults its Rating filter to one and two star reviews, which is where abuse usually sits. The grid shows the reviewer, medicine, pharmacy, comment, date and the order id that proves the purchase. Hide Review sets `Reviews.IsHidden` to 1 rather than deleting the row, so the review disappears from the customer screens and from the average rating calculation but remains available if the pharmacy disputes the decision.
+The Moderate Reviews form defaults its Rating filter to one and two star reviews, which is where abuse usually sits. The grid shows the reviewer, medicine, pharmacy, comment, date and the order id that proves the purchase. Hide Review sets `Reviews.IsHidden` to 1 rather than deleting the row, so the review disappears from the customer screens and from the average rating calculation but remains available for audit. Reviews a pharmacy owner has reported appear under a *Reported by pharmacy* filter with the owner's reason, and **Dismiss report** clears the flag without hiding the review. When a pattern of complaints calls for more than hiding one review, **Warn pharmacy** sends the owner a formal warning — pre-filled with the review's rating and an excerpt, editable, 10 to 500 characters — stored on the pharmacy row as its single current warning, and **Open pharmacy** jumps straight to that shop in Manage Pharmacies, where a *Warning* column shows whether the owner has read it.
 
 **8. As a Super Admin, I can maintain the master category list, so that every pharmacy classifies its medicines the same way.**
 Manage Categories is a DataGridView with Add, Edit and Deactivate. The category name is validated as non empty and protected by a `UNIQUE` constraint, so a second `'Antibiotic'` is rejected with a red error label instead of a database exception. A category already referenced by a medicine cannot be deleted; it can only be deactivated by setting `IsActive` to 0, which keeps existing foreign keys valid.
@@ -221,7 +222,7 @@ The Sales and Earnings form takes a date range and an optional medicine filter. 
 The Discount Offers form lists the owner's existing offers and lets him create a new one by choosing a medicine from a ComboBox, entering a discount percentage and picking a start and end date. The percentage must be greater than 0 and no more than 70, and the end date cannot be earlier than the start date; both rules are enforced in the form and again by `CHECK` constraints on the `Offers` table. Once saved, the discounted price appears automatically on the customer's Offers screen for exactly the dates chosen.
 
 **16. As a Pharmacy Owner, I can read the reviews written about my medicines, so that I can understand what customers complain about.**
-The Customer Reviews form is **read only by design**. It shows a DataGridView of reviewer name, medicine, rating, comment and date for medicines belonging to this pharmacy only, with an average rating displayed above the grid. There is no Delete button anywhere on this form. If the owner believes a review is abusive he uses the Report button, which flags it for the Super Admin rather than removing it himself.
+The Customer Reviews form is **read only by design**. It shows a DataGridView of reviewer name, medicine, rating, comment and date for medicines belonging to this pharmacy only, with an average rating displayed above the grid. There is no Delete button anywhere on this form. If the owner believes a review is abusive he uses the Report button, which flags it for the Super Admin with a short reason rather than removing it himself. Communication also runs the other way: when the Super Admin warns the pharmacy, the owner's dashboard shows the warning as a banner above the order queue until he presses **I've read this**, and the time he read it is recorded.
 
 **17. As a Pharmacy Owner, I can verify a prescription before dispatch, so that I do not dispense a controlled medicine without a doctor's order.**
 When an order contains a medicine whose `RequiresRx` flag is set, the order appears in the Prescriptions queue with the uploaded image and the doctor's name. The owner opens the image, then clicks Approve or Reject, which sets `Prescriptions.VerifyStatus`. An order whose prescription is still Pending cannot be moved to Confirmed, so the Confirm button on that order stays disabled and a hint explains why.
@@ -229,7 +230,7 @@ When an order contains a medicine whose `RequiresRx` flag is set, the order appe
 ### Customer
 
 **18. As a Customer, I can create an account, so that I can order medicine without visiting a pharmacy in person.**
-The Sign Up form asks for account type, full name, email, mobile number, address, password and password confirmation. Email must match a basic address pattern and must not already exist, mobile must be eleven digits and unique, and the two password boxes must match; each failure shows a red label directly under the offending field and keeps the Create Account button disabled. On success a row is inserted into `Users` with `UserType 'Customer'` and `Status 'Active'`.
+The Sign Up form asks for account type, full name, email, mobile number, address, password and password confirmation. Email must match a basic address pattern and must not already exist, mobile must be eleven digits and unique, the password must be at least eight characters with a letter and a digit, and the two password boxes must match. A red label appears directly under a field once the user has left it or pressed Create Account — never on a form that has not been touched yet — and nothing is saved while any field is invalid. On success a row is inserted into `Users` with `UserType 'Customer'` and `Status 'Active'`.
 
 **19. As a Customer, I can search and filter medicines, so that I can find what I need at a price I can afford.**
 The Home screen carries a search TextBox and five ComboBox filters: category, price range, area, pharmacy and availability. Search matches the keyword against medicine name, generic name and manufacturer with a `LIKE` query, so typing *paracetamol* finds Napa and Ace Plus even though neither brand contains that word. Filters are combined in a single query and only medicines belonging to Approved pharmacies are returned. The result count and the number of active filters are shown in the status strip.
@@ -247,7 +248,7 @@ The Checkout form pre fills the delivery address from the profile and asks the c
 If the cart contains a medicine with `RequiresRx` set, the Confirm Order step opens a modal asking for a photograph of the prescription and, optionally, the prescribing doctor's name. Only JPG and PNG files under 2 MB are accepted and the dialog cannot be dismissed without either uploading or removing the medicine from the cart. The file path is stored in `Prescriptions` with `VerifyStatus 'Pending'`, and the order waits in the pharmacy's verification queue before it is dispatched.
 
 **24. As a Customer, I can look back at my past orders, so that I can reorder the same medicine and show a bill if something is wrong.**
-Order History lists every order with its date, the selling pharmacy, the number of line items, the total paid, the payment method and a status pill, filtered by status, pharmacy and date range through three ComboBox controls. View Invoice reopens the printable bill for the selected order. Because an order that spans two pharmacies was split at checkout, each pharmacy's delivery appears as its own row with its own invoice, which is what the customer actually received.
+Order History lists every order with its date, the selling pharmacy, the number of line items, the total paid, the payment method and a status pill, filtered by status, pharmacy and date range through three ComboBox controls. View Invoice reopens the printable bill for the selected order, and **Reorder** puts every line of a confirmed, delivered or cancelled order back into the cart at today's prices — anything since delisted, expired, out of stock or sold by a shop that is no longer approved is skipped and named with its reason, and the customer is offered the cart straight away. Because an order that spans two pharmacies was split at checkout, each pharmacy's delivery appears as its own row with its own invoice, which is what the customer actually received.
 
 **25. As a Customer, I can rate a medicine after delivery, so that other patients know whether the pharmacy is reliable.**
 The Rate and Review button is enabled only for orders whose status is `'Delivered'` and that have not been reviewed yet. It opens a modal with a one to five star selector and a comment box limited to 500 characters; a rating must be chosen before Submit is enabled. Submit inserts a row into `Reviews` carrying the customer id, medicine id and order id, and the `UNIQUE` constraint on those three columns stops the same purchase being rated twice.
@@ -299,6 +300,10 @@ erDiagram
         nvarchar UserType
         nvarchar Status
         datetime2 CreatedAt
+        int FailedLoginCount
+        datetime2 LockoutUntil
+        bit MustChangePassword
+        datetime2 PasswordResetRequestedAt
     }
     PHARMACIES {
         int PharmacyId PK
@@ -312,6 +317,9 @@ erDiagram
         decimal CommissionRate
         nvarchar Status
         datetime2 RegisteredAt
+        nvarchar WarningMessage
+        datetime2 WarnedAt
+        datetime2 WarningAcknowledgedAt
     }
     CATEGORIES {
         int CategoryId PK
@@ -354,6 +362,7 @@ erDiagram
         decimal CommissionAmount
         nvarchar DeliveryAddress
         nvarchar PaymentMethod
+        nvarchar PaymentMobile
         nvarchar Status
     }
     ORDERITEMS {
@@ -373,6 +382,9 @@ erDiagram
         nvarchar Comment
         datetime2 ReviewDate
         bit IsHidden
+        bit IsReported
+        nvarchar ReportReason
+        datetime2 ReportedAt
     }
     OFFERS {
         int OfferId PK
@@ -391,6 +403,7 @@ erDiagram
         nvarchar DoctorName
         datetime2 UploadedAt
         nvarchar VerifyStatus
+        nvarchar RejectReason
     }
 ```
 
@@ -410,8 +423,10 @@ Every relationship on the ER diagram is normalised to third normal form. Two rep
 
 **2NF:** the key is `{UserId, PharmacyId}`. `FullName, Email, …` depend on `UserId` alone and `PharmacyName, LicenseNo, …` depend on `PharmacyId` alone, so both are partial dependencies. Decompose:
 
-- **Users**(<u>UserId</u>, FullName, Email, PasswordHash, PasswordSalt, Phone, Address, UserType, Status, CreatedAt)
-- **Pharmacies**(<u>PharmacyId</u>, OwnerId (FK), PharmacyName, LicenseNo, Area, Address, ContactPhone, LogoPath, CommissionRate, Status, RegisteredAt)
+- **Users**(<u>UserId</u>, FullName, Email, PasswordHash, PasswordSalt, Phone, Address, UserType, Status, CreatedAt, FailedLoginCount, LockoutUntil, MustChangePassword, PasswordResetRequestedAt)
+- **Pharmacies**(<u>PharmacyId</u>, OwnerId (FK), PharmacyName, LicenseNo, Area, Address, ContactPhone, LogoPath, CommissionRate, Status, RegisteredAt, WarningMessage, WarnedAt, WarningAcknowledgedAt)
+
+The later columns describe one account or one shop and nothing else — its login lockout, its password reset state, and the single current warning from the Super Admin — so they depend on the key alone and both relations stay in 3NF.
 
 **3NF:** no non key attribute determines another non key attribute in either relation, so both are already in 3NF. `OwnerId` is declared `UNIQUE`, which is exactly what turns a one to many foreign key into the one to one relationship the diagram claims.
 
@@ -453,6 +468,8 @@ Stores all three roles in one table. The `UserType` column is what the login que
 | `CreatedAt` | DATETIME2(0) | NOT NULL, DEFAULT | Registration timestamp, shown as Member Since |
 | `FailedLoginCount` | INT | NOT NULL, DEFAULT 0 | Consecutive wrong passwords; reset by a successful login |
 | `LockoutUntil` | DATETIME2(0) | NULL | Set 15 minutes ahead after five wrong passwords in a row |
+| `MustChangePassword` | BIT | NOT NULL, DEFAULT 0 | 1 while the account holds a temporary password from the Super Admin; the next login must set a new one |
+| `PasswordResetRequestedAt` | DATETIME2(0) | NULL | When the Forgot password form matched this account; NULL means no request is waiting |
 
 ### 2. Categories
 Master list maintained by the Super Admin, kept separate so a category name is stored once.
@@ -480,6 +497,9 @@ One row per Admin. `OwnerId` is UNIQUE, which enforces the rule that one pharmac
 | `CommissionRate` | DECIMAL(5,2) | NOT NULL, CHECK 0–30 | Platform commission percentage for this pharmacy |
 | `Status` | NVARCHAR(15) | NOT NULL, CHECK | `'Pending'`, `'Approved'`, `'Suspended'` or `'Rejected'`; only `'Approved'` shops are visible to customers |
 | `RegisteredAt` | DATETIME2(0) | NOT NULL, DEFAULT | When the registration was submitted |
+| `WarningMessage` | NVARCHAR(500) | NULL | The Super Admin's current formal warning to the owner, a step short of suspension |
+| `WarnedAt` | DATETIME2(0) | NULL | When that warning was issued; a new warning replaces the old one |
+| `WarningAcknowledgedAt` | DATETIME2(0) | NULL | When the owner dismissed the warning banner; NULL while it is still showing |
 
 ### 4. Medicines
 The products for sale. Two pharmacies selling the same brand are two separate rows with their own price and stock.
@@ -869,17 +889,32 @@ Ratings sit on medicines, not on pharmacies, so the average has to be built by j
 *Form: `SuperAdminManageShopsForm` — requirements 2 and 3*
 
 ```sql
--- approve a pending pharmacy owner
-UPDATE Pharmacies SET Status = 'Approved' WHERE PharmacyId = @PharmacyId;
-UPDATE Users      SET Status = 'Active'   WHERE UserId     = @OwnerId;
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
 
--- suspend an owner and hide their medicines from customers
-UPDATE Pharmacies SET Status   = 'Suspended' WHERE PharmacyId = @PharmacyId;
-UPDATE Users      SET Status   = 'Suspended' WHERE UserId     = @OwnerId;
-UPDATE Medicines  SET IsActive = 0           WHERE PharmacyId = @PharmacyId;
+    -- approve: only a Pending or Rejected registration can be approved
+    UPDATE Pharmacies SET Status = 'Approved'
+    WHERE  PharmacyId = @PharmacyId AND Status IN ('Pending', 'Rejected');
+
+    IF @@ROWCOUNT = 1
+        UPDATE Users SET Status = 'Active'
+        WHERE  UserId = (SELECT OwnerId FROM Pharmacies WHERE PharmacyId = @PharmacyId);
+
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF XACT_STATE() <> 0 ROLLBACK TRANSACTION;
+    THROW;
+END CATCH;
+
+-- suspend follows the same pattern, from Approved only:
+--   UPDATE Pharmacies SET Status = 'Suspended' WHERE PharmacyId = @PharmacyId AND Status = 'Approved';
+--   UPDATE Users      SET Status = 'Suspended' WHERE UserId = <owner>;
+-- reinstate goes from Suspended back to Approved; reject goes from Pending to Rejected.
 ```
 
-Approval flips two rows, because the pharmacy record and the login account are separate concerns. Suspension flips three: the pharmacy, the account and every medicine that pharmacy lists. **Nothing is deleted anywhere**, so the invoices customers already hold and the sales figures in last month's report stay exactly as they were.
+Approval flips two rows, because the pharmacy record and the login account are separate concerns, and each statement is guarded by the status it is allowed to start from, so a rejected shop cannot slip back in through Reinstate. `SET XACT_ABORT ON` with `TRY`/`CATCH` makes the pair genuinely all-or-nothing. **Medicines are not touched**: every customer query already requires `Pharmacies.Status = 'Approved'`, so a suspended shop's items vanish from customer screens on their own, and reinstating it restores exactly what the owner had listed. **Nothing is deleted anywhere**, so the invoices customers already hold and the sales figures in last month's report stay exactly as they were.
 
 ### 8.12 Active offers today with the discounted price
 *Form: `CustomerOffersForm` — requirement 29*
@@ -1115,7 +1150,9 @@ flowchart TD
 
     Login -->|Create an account| SignUp
     SignUp -->|Back to login| Login
+    Login -.->|Forgot password?| FP(["ForgotPasswordForm<br/><i>modal, request to Super Admin</i>"])
     Login -->|valid credentials| Check
+    Login -.->|temporary password| CPW(["ChangePasswordRequiredForm<br/><i>modal, before any dashboard</i>"])
 
     Check -->|SuperAdmin| SA["SuperAdminDashboard"]
     Check -->|Admin| AD["AdminDashboard"]
@@ -1161,16 +1198,16 @@ flowchart TD
 
 | # | Form | Reached from | Leads to | Purpose |
 |---|------|--------------|----------|---------|
-| 1 | `LoginForm` | application start | 3 dashboards, `SignUpForm` | The single entry point for all three roles |
+| 1 | `LoginForm` | application start | 3 dashboards, `SignUpForm`, forms 30, 31 | The single entry point for all three roles, with Remember my email |
 | 2 | `SignUpForm` | `LoginForm` | back to `LoginForm` | Registration for customers and pharmacy owners |
 | 3 | `SuperAdminDashboard` | login | forms 4–9 | Four tiles, pending queue, low rated panel |
-| 4 | `SuperAdminManageShopsForm` | dashboard, form 8 | back | Approve, suspend, delete, set commission |
+| 4 | `SuperAdminManageShopsForm` | dashboard, forms 8, 9 | back | Approve, reject, suspend, delete, set commission, see warning state |
 | 5 | `SuperAdminManageUsersForm` | dashboard | back | Search every Admin and Customer |
 | 6 | `ManageCategoriesForm` | dashboard | back | Master category CRUD |
 | 7 | `SuperAdminSalesReportForm` | dashboard | back | Platform sales, commission, CSV export |
 | 8 | `SuperAdminLowRatedShopsForm` | dashboard | form 4 | `HAVING AVG(Rating) < 2.5` report |
-| 9 | `ModerateReviewsForm` | dashboard | back | Hide or restore a review |
-| 10 | `AdminDashboard` | login | forms 11–19 | Tiles, order queue, low stock alert |
+| 9 | `ModerateReviewsForm` | dashboard | form 4 | Hide or restore a review, dismiss a report, warn a pharmacy |
+| 10 | `AdminDashboard` | login | forms 11–19 | Tiles, warning banner, order queue, low stock alert |
 | 11 | `AdminMedicineForm` | dashboard | forms 12, 15 | Medicine CRUD, own pharmacy only |
 | 12 | `MedicineEditorForm` *(modal)* | forms 11, 13 | back | Add / edit with full field validation |
 | 13 | `AdminInventoryForm` | dashboard | form 12 | Low stock alert and full inventory |
@@ -1184,12 +1221,14 @@ flowchart TD
 | 21 | `MedicineDetailsForm` | forms 20, 23 | back | Details, discounted price, reviews |
 | 22 | `CartForm` | form 20 | form 26 | Quantity, removal, per pharmacy summary |
 | 23 | `CustomerOffersForm` | form 20 | form 21 | Offers running today |
-| 24 | `OrderHistoryForm` | form 20 | forms 27, 28 | Past orders and invoices |
+| 24 | `OrderHistoryForm` | form 20 | forms 22, 27, 28, 29 | Past orders, invoices, reorder, cancel, prescription re-upload |
 | 25 | `MyProfileForm` | form 20 | back | Own details and password change |
 | 26 | `CheckoutForm` | form 22 | forms 27, 29 | Runs once per pharmacy in the cart |
-| 27 | `InvoiceForm` | forms 10, 24, 26 | back | Printable bill |
+| 27 | `InvoiceForm` | forms 10, 24, 26 | back | Printable bill, Save as PDF, save as text |
 | 28 | `GiveRatingForm` *(modal)* | form 24 | back | Star rating and comment |
 | 29 | `UploadPrescriptionForm` *(modal)* | form 26 | back | JPG / PNG under 2 MB |
+| 30 | `ForgotPasswordForm` *(modal)* | form 1 | back | Email and registered mobile; sends a reset request to the Super Admin |
+| 31 | `ChangePasswordRequiredForm` *(modal)* | form 1, after a temporary-password login | the user's dashboard | Forces a new password before any dashboard opens |
 
 ---
 
@@ -1215,9 +1254,11 @@ flowchart TD
 
 10. **Commission frozen at the point of sale.** The commission is calculated once at checkout from the pharmacy's own rate and stored on the order row. A price change next month cannot rewrite what was owed on last month's sales, and the earnings report never has to be reconciled by hand.
 
-11. **Printable invoices and order history.** Every completed order produces a printable bill carrying both addresses, the pharmacy licence number, the line items at the price charged, and the grand total. Customers can reopen any past invoice from their order history.
+11. **Printable invoices and order history.** Every completed order produces a printable bill carrying both addresses, the pharmacy licence number, the line items at the price charged, and the grand total. Customers can reopen any past invoice from their order history, print it, save it as a PDF through Windows' built-in *Microsoft Print to PDF* printer, or reorder the same items.
 
-12. **Passwords never stored in plain text.** Passwords are salted and hashed with SHA-256 before they reach the database, and a password change verifies the current hash inside the same `UPDATE`, so a wrong entry simply updates no rows.
+12. **Passwords never stored in plain text.** Passwords are hashed with PBKDF2-HMAC-SHA256 (100,000 iterations, a random salt per user) before they reach the database, and compared in constant time. Five wrong passwords in a row lock the account for fifteen minutes, and an unknown email and a wrong password get the same message, so the login screen cannot be used to discover who is registered. Accounts from an older database that still carry a salted SHA-256 hash keep working and are silently re-hashed with PBKDF2 at their next successful login.
+
+13. **Help-desk password reset.** With no email or SMS service, a forgotten password goes to the Super Admin as a request matched on email and registered mobile number. The Super Admin issues a random temporary password that is shown once and stored only as a hash, and the user must choose a new password at their next login before anything else opens. The login form can remember the email (never the password) on that computer.
 
 ---
 
@@ -1230,8 +1271,8 @@ flowchart TD
 | Database | Microsoft SQL Server 2019 or newer (LocalDB / Express both work) |
 | Data access | ADO.NET via `Microsoft.Data.SqlClient` 7.0.1 — **parameterised commands only** |
 | Configuration | `System.Configuration.ConfigurationManager` (`App.config`) |
-| Security | `System.Security.Cryptography.SHA256` with a per user random salt |
-| Reporting | `System.Drawing.Printing.PrintDocument` for invoices, CSV export for reports |
+| Security | `System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2` (PBKDF2-HMAC-SHA256, 100,000 iterations) with a per user random salt; login lockout after five failures; `RandomNumberGenerator` temporary passwords with a forced change at next login |
+| Reporting | `System.Drawing.Printing.PrintDocument` for invoices (printed, or saved as PDF through *Microsoft Print to PDF*), CSV export for reports |
 | IDE | Visual Studio 2022 / 2026 |
 
 ---
@@ -1247,10 +1288,15 @@ PharmaLink-Pharmacy-Marketplace/
 ├── Program.cs                    # entry point → LoginForm
 ├── UserSession.cs                # UserId, UserType and PharmacyId for the whole session
 ├── PharmaLinkDB_Setup.sql        # complete schema + constraints + sample data
+├── PharmaLinkDB_Upgrade.sql      # upgrades an existing older PharmaLinkDB in place, safe to re-run
 ├── README.md                     # this report
 │
+├── SampleData/
+│   └── Prescriptions/            # sample prescription image for seeded order 1005
+│
 ├── Database/
-│   └── DbHelper.cs               # the only class that knows how to reach SQL Server
+│   ├── DbHelper.cs               # the only class that knows how to reach SQL Server
+│   └── DataAccessException.cs    # SQL Server errors translated into plain English
 │
 ├── Models/
 │   ├── User.cs          Pharmacy.cs      Category.cs
@@ -1259,8 +1305,10 @@ PharmaLink-Pharmacy-Marketplace/
 │   └── Prescription.cs
 │
 ├── Helpers/
-│   ├── PasswordHelper.cs         # salted SHA-256 hash / verify
+│   ├── PasswordHelper.cs         # PBKDF2 hash / verify (legacy SHA-256 still accepted)
 │   ├── Validator.cs              # every validation rule in one place
+│   ├── LoginPreferences.cs       # "Remember my email" - stores the email only
+│   ├── ListItem.cs               # dropdown entry that carries an id but shows only text
 │   └── UiTheme.cs                # one palette and one set of control styles
 │
 ├── Services/                     # the repository layer — all SQL lives here
@@ -1275,8 +1323,9 @@ PharmaLink-Pharmacy-Marketplace/
 │   ├── PrescriptionService.cs    # image upload and verification
 │   └── ReportService.cs          # earnings, low rated, revenue by area, CSV
 │
-└── Forms/                        # 28 forms, each with its .Designer.cs and .resx
-    ├── LoginForm / SignUpForm                                   (shared entry)
+└── Forms/                        # 30 forms, each with its .Designer.cs
+    ├── LoginForm / SignUpForm / ForgotPasswordForm
+    │   ChangePasswordRequiredForm                               (shared entry)
     ├── SuperAdminDashboard / SuperAdminManageShopsForm
     │   SuperAdminManageUsersForm / SuperAdminSalesReportForm
     │   SuperAdminLowRatedShopsForm / ManageCategoriesForm
@@ -1291,7 +1340,7 @@ PharmaLink-Pharmacy-Marketplace/
         MyProfileForm                                            (Customer)
 ```
 
-**Why the layers are split this way.** `Forms` never contains SQL; it calls a service. `Services` never contains a `MessageBox`; it returns data or a boolean plus a message. `DbHelper` is the only class that knows the connection string. That separation is what makes the data isolation rule checkable: to prove that a pharmacy owner cannot read another shop's data you only have to read `MedicineService`, `OrderService` and `ReportService`, not twenty-eight button click handlers.
+**Why the layers are split this way.** `Forms` never contains SQL; it calls a service. `Services` never contains a `MessageBox`; it returns data or a boolean plus a message. `DbHelper` is the only class that knows the connection string. That separation is what makes the data isolation rule checkable: to prove that a pharmacy owner cannot read another shop's data you only have to read `MedicineService`, `OrderService` and `ReportService`, not thirty forms' worth of button click handlers.
 
 ---
 
@@ -1312,8 +1361,10 @@ Open **`PharmaLinkDB_Setup.sql`** in SQL Server Management Studio and press **Ex
 2. drops the ten tables in foreign key order so it is safe to re-run,
 3. creates all ten tables with every primary key, foreign key, `UNIQUE` and `CHECK` constraint,
 4. creates the supporting indexes,
-5. inserts sample data — 1 Super Admin, 4 pharmacy owners, 4 customers, 10 categories, 24 medicines, 7 orders with 11 line items, 7 reviews, 4 offers, 1 pending prescription and a 2 line cart,
+5. inserts sample data — 1 Super Admin, 4 pharmacy owners, 4 customers, 10 categories, 24 medicines, 7 orders with 11 line items, 7 reviews, 4 offers, 2 prescriptions (one approved on a delivered order, one waiting for verification) and a 2 line cart,
 6. prints a row count per table so you can see it worked.
+
+> **Already have a `PharmaLinkDB` from an earlier version of this project?** Running the setup script again drops and recreates every table, which deletes any orders you placed yourself. To keep your data, run **`PharmaLinkDB_Upgrade.sql`** instead: it adds the new columns (login lockout, payment wallet number, review reports, prescription reject reason), the `'Rejected'` pharmacy status and the new indexes in place, and is safe to run more than once. Take a backup first if the data matters to you. The application will not sign anyone in against an old database until one of the two scripts has been run.
 
 ### Step 2 — Point the application at your server
 
@@ -1368,13 +1419,16 @@ Or open `PharmaLinkApp.slnx` in Visual Studio and press **F5**.
 | *A network-related or instance-specific error occurred* | Wrong instance name, or the SQL Server service is stopped. Start it from `services.msc`. |
 | *Login failed for user* | Windows authentication is off on that server; switch the connection string to `User Id` / `Password`. |
 | *"This account is still waiting for Super Admin approval."* | You logged in as `imran@newlifepharmacy.com`, which is deliberately left Pending. Approve New Life Pharmacy as the Super Admin first — this is feature 2 working as designed. |
-| The prescription image does not display on the verify screen | The seeded row points at a sample path that has no file. Place a real order with an Rx medicine to upload a genuine image. |
+| The prescription image does not display on the verify screen | The build copies `SampleData/Prescriptions/rx-1005-sample.jpg` next to the executable as `Uploads\Prescriptions\rx-1005-sample.jpg`. If it is missing, rebuild the project rather than running an old copy of the executable. |
+| *"Invalid column name 'FailedLoginCount'"* or a similar column error | The database was created by an older version of the script. Run `PharmaLinkDB_Upgrade.sql` (keeps your data) or `PharmaLinkDB_Setup.sql` (starts fresh). |
+| *"Email or password is incorrect"* although the password is right | Five wrong passwords in a row lock an account for fifteen minutes, and a locked account gets the same message on purpose. Wait, or clear `Users.LockoutUntil` for that account in SSMS. |
+| A user keeps being asked to choose a new password | `Users.MustChangePassword` is 1 because a temporary password was issued; completing the dialog clears it. To clear it by hand, set it to 0 in SSMS. |
 
 ---
 
 ## 14. Demonstration Accounts
 
-All of these are created by `PharmaLinkDB_Setup.sql` with a real salted SHA-256 hash, so they work immediately.
+All of these are created by `PharmaLinkDB_Setup.sql` with a real salted PBKDF2 hash, so they work immediately.
 
 | Role | Email | Password | Notes |
 |------|-------|----------|-------|
@@ -1587,13 +1641,13 @@ Full list, including the deliberately-Pending owner and the low-rated shop, is i
 
 | Item | Count |
 |------|-------|
-| Windows Forms | 28 |
+| Windows Forms | 30 |
 | Database tables | 10 |
-| Foreign keys / `UNIQUE` / `CHECK` constraints | 15 / 13 / 20 |
-| Indexes | 12 |
+| Foreign keys / `UNIQUE` / `CHECK` constraints | 16 / 9 / 20 |
+| Indexes (excluding primary key and unique constraint indexes) | 14 |
 | Service classes (all SQL lives here) | 10 |
 | Model classes | 10 |
-| Hand-written C# (excluding `.Designer.cs`) | ~10,500 lines |
+| Hand-written C# (excluding `.Designer.cs`) | ~17,000 lines |
 | Target framework | `net10.0-windows` |
 
 ---

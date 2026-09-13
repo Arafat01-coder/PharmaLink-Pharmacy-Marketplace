@@ -20,6 +20,13 @@
 --   6. Indexes       drop IX_OrderItems_Order, IX_Cart_Customer;
 --                    add IX_Reviews_Order, IX_Reviews_Customer,
 --                        IX_Prescriptions_Order, IX_Pharmacies_Status
+--   7. Users         MustChangePassword, PasswordResetRequestedAt
+--                    (help-desk password reset and forced password change)
+--   8. Pharmacies    WarningMessage, WarnedAt, WarningAcknowledgedAt
+--                    (Super Admin warning shown to the owner)
+--
+--  Steps 7 and 8 only add columns: existing accounts start with
+--  MustChangePassword = 0 and no reset request, and no pharmacy starts warned.
 --
 --  Passwords are NOT rewritten here.  Existing rows keep their legacy SHA-256
 --  hashes; the application still accepts them and replaces each one with a
@@ -242,6 +249,54 @@ GO
 
 
 -- =============================================================================
+--  7. Users: password reset request and forced password change
+--  There is no email or SMS service.  "Forgot password?" stamps
+--  PasswordResetRequestedAt; the Super Admin then issues a temporary password,
+--  which sets MustChangePassword = 1 until the user picks a new one at login.
+--  The NOT NULL column gets its DEFAULT in the same ALTER, so every existing
+--  row is filled with 0 without a separate UPDATE.
+-- =============================================================================
+IF COL_LENGTH('dbo.Users', 'MustChangePassword') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD MustChangePassword BIT NOT NULL
+        CONSTRAINT DF_Users_MustChangePw DEFAULT (0);
+    PRINT 'Users.MustChangePassword added.';
+END
+
+IF COL_LENGTH('dbo.Users', 'PasswordResetRequestedAt') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD PasswordResetRequestedAt DATETIME2(0) NULL;
+    PRINT 'Users.PasswordResetRequestedAt added.';
+END
+GO
+
+
+-- =============================================================================
+--  8. Pharmacies: Super Admin warning
+--  The latest warning to the owner, when it was sent and when the owner
+--  acknowledged it.  All NULL means the shop has never been warned.
+-- =============================================================================
+IF COL_LENGTH('dbo.Pharmacies', 'WarningMessage') IS NULL
+BEGIN
+    ALTER TABLE dbo.Pharmacies ADD WarningMessage NVARCHAR(500) NULL;
+    PRINT 'Pharmacies.WarningMessage added.';
+END
+
+IF COL_LENGTH('dbo.Pharmacies', 'WarnedAt') IS NULL
+BEGIN
+    ALTER TABLE dbo.Pharmacies ADD WarnedAt DATETIME2(0) NULL;
+    PRINT 'Pharmacies.WarnedAt added.';
+END
+
+IF COL_LENGTH('dbo.Pharmacies', 'WarningAcknowledgedAt') IS NULL
+BEGIN
+    ALTER TABLE dbo.Pharmacies ADD WarningAcknowledgedAt DATETIME2(0) NULL;
+    PRINT 'Pharmacies.WarningAcknowledgedAt added.';
+END
+GO
+
+
+-- =============================================================================
 --  VERIFY
 --  Every row should say OK.
 -- =============================================================================
@@ -254,6 +309,11 @@ FROM (
     UNION ALL SELECT 'Reviews.ReportReason',        CASE WHEN COL_LENGTH('dbo.Reviews', 'ReportReason') IS NULL THEN 0 ELSE 1 END
     UNION ALL SELECT 'Reviews.ReportedAt',          CASE WHEN COL_LENGTH('dbo.Reviews', 'ReportedAt') IS NULL THEN 0 ELSE 1 END
     UNION ALL SELECT 'Prescriptions.RejectReason',  CASE WHEN COL_LENGTH('dbo.Prescriptions', 'RejectReason') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Users.MustChangePassword',    CASE WHEN COL_LENGTH('dbo.Users', 'MustChangePassword') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Users.PasswordResetRequestedAt', CASE WHEN COL_LENGTH('dbo.Users', 'PasswordResetRequestedAt') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Pharmacies.WarningMessage',   CASE WHEN COL_LENGTH('dbo.Pharmacies', 'WarningMessage') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Pharmacies.WarnedAt',         CASE WHEN COL_LENGTH('dbo.Pharmacies', 'WarnedAt') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Pharmacies.WarningAcknowledgedAt', CASE WHEN COL_LENGTH('dbo.Pharmacies', 'WarningAcknowledgedAt') IS NULL THEN 0 ELSE 1 END
     UNION ALL SELECT 'CK_Pharmacies_Status allows Rejected',
               CASE WHEN EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_Pharmacies_Status' AND definition LIKE '%Rejected%') THEN 1 ELSE 0 END
     UNION ALL SELECT 'CK_Orders_Commission',

@@ -109,30 +109,37 @@ namespace PharmaLinkApp.Forms
 
                     if (dgvQueue.Columns.Count > 0)
                     {
-                        dgvQueue.Columns["PrescriptionId"].HeaderText = "Rx";
+                        // The prescription id is only needed to act on the row, so it is
+                        // hidden; short headers and DPI-scaled floors let the queue fit
+                        // beside the image preview without a horizontal scrollbar.
+                        dgvQueue.Columns["PrescriptionId"].Visible = false;
                         dgvQueue.Columns["OrderId"].HeaderText = "Order";
                         dgvQueue.Columns["Customer"].HeaderText = "Customer";
-                        dgvQueue.Columns["DoctorName"].HeaderText = "Prescribing doctor";
+                        dgvQueue.Columns["DoctorName"].HeaderText = "Doctor";
                         dgvQueue.Columns["ImagePath"].Visible = false;
                         dgvQueue.Columns["UploadedAt"].HeaderText = "Uploaded";
-                        dgvQueue.Columns["VerifyStatus"].HeaderText = "Verification";
+                        dgvQueue.Columns["UploadedAt"].DefaultCellStyle.Format = "dd MMM, HH:mm";
+                        dgvQueue.Columns["VerifyStatus"].HeaderText = "Rx status";
                         dgvQueue.Columns["RejectReason"].HeaderText = "Reason";
-                        dgvQueue.Columns["OrderStatus"].HeaderText = "Order status";
-                        dgvQueue.Columns["TotalAmount"].HeaderText = "Order total (Tk)";
+                        dgvQueue.Columns["OrderStatus"].HeaderText = "Order";
+                        dgvQueue.Columns["TotalAmount"].HeaderText = "Total (Tk)";
                         dgvQueue.Columns["IsCurrent"].Visible = false;
 
-                        UiTheme.SizeColumn(dgvQueue, "PrescriptionId", 28, 40);
-                        UiTheme.SizeColumn(dgvQueue, "OrderId", 36, 55);
-                        UiTheme.SizeColumn(dgvQueue, "Customer", 80, 100);
-                        UiTheme.SizeColumn(dgvQueue, "DoctorName", 90, 110);
-                        UiTheme.SizeColumn(dgvQueue, "UploadedAt", 70, 100);
-                        UiTheme.SizeColumn(dgvQueue, "VerifyStatus", 50, 75);
-                        UiTheme.SizeColumn(dgvQueue, "RejectReason", 80, 80);
-                        UiTheme.SizeColumn(dgvQueue, "OrderStatus", 50, 75);
-                        UiTheme.SizeColumn(dgvQueue, "TotalAmount", 50, 80);
+                        UiTheme.SizeColumn(dgvQueue, "OrderId", 36, 48);
+                        UiTheme.SizeColumn(dgvQueue, "Customer", 80, 80);
+                        UiTheme.SizeColumn(dgvQueue, "DoctorName", 90, 80);
+                        UiTheme.SizeColumn(dgvQueue, "UploadedAt", 70, 84);
+                        UiTheme.SizeColumn(dgvQueue, "VerifyStatus", 50, 62);
+                        UiTheme.SizeColumn(dgvQueue, "RejectReason", 70, 54);
+                        UiTheme.SizeColumn(dgvQueue, "OrderStatus", 50, 60);
+                        UiTheme.SizeColumn(dgvQueue, "TotalAmount", 50, 60);
                     }
 
                     SelectRow(keepId);
+
+                    // Hiding PrescriptionId above cleared the current cell; put it
+                    // back so the first prescription's image and items show on open.
+                    UiTheme.EnsureCurrentCell(dgvQueue, "OrderId");
                 }
                 finally
                 {

@@ -31,6 +31,15 @@ namespace PharmaLinkApp.Helpers
         private const string Prefix = "PBKDF2$";
         private const int Iterations = 100000;
         private const int KeyBytes = 32;
+        private const int LegacyHashBytes = 32;
+
+        // A stored iteration count outside this range is treated as corrupt, so
+        // a hand-edited "PBKDF2$2000000000$..." cannot freeze the login screen.
+        private const int MinIterations = 1000;
+        private const int MaxIterations = 10000000;
+
+        /// <summary>UTF-8 without a BOM that replaces invalid characters instead of throwing.</summary>
+        private static readonly Encoding PasswordEncoding = new UTF8Encoding(false, false);
 
         /// <summary>Creates a fresh 16 byte random salt, Base64 encoded (24 characters).</summary>
         public static string CreateSalt()
@@ -62,17 +71,24 @@ namespace PharmaLinkApp.Helpers
                     // PBKDF2$<iterations>$<base64 key>
                     string[] parts = storedHash.Split('$');
                     if (parts.Length != 3) return false;
-                    if (!int.TryParse(parts[1], out int iterations) || iterations <= 0) return false;
+                    if (!int.TryParse(parts[1], out int iterations) ||
+                        iterations < MinIterations || iterations > MaxIterations) return false;
 
+                    // The key must be exactly the length this class writes. Without
+                    // this, a damaged value such as "PBKDF2$100000$" decoded to zero
+                    // bytes, PBKDF2 happily produced zero bytes, and two empty arrays
+                    // compare equal - so every password would have been accepted.
                     byte[] expected = Convert.FromBase64String(parts[2]);
-                    byte[] actual = Rfc2898DeriveBytes.Pbkdf2(password ?? string.Empty, SaltBytes(salt),
-                                                              iterations, HashAlgorithmName.SHA256, expected.Length);
+                    if (expected.Length != KeyBytes) return false;
+
+                    byte[] actual = Derive(password, SaltBytes(salt), iterations);
                     return CryptographicOperations.FixedTimeEquals(actual, expected);
                 }
 
                 // Legacy: Base64( SHA-256( salt + password ) ) on the salt *string*.
                 byte[] legacyExpected = Convert.FromBase64String(storedHash);
-                byte[] legacyActual = SHA256.HashData(Encoding.UTF8.GetBytes((salt ?? string.Empty) + (password ?? string.Empty)));
+                if (legacyExpected.Length != LegacyHashBytes) return false;
+                byte[] legacyActual = SHA256.HashData(PasswordEncoding.GetBytes((salt ?? string.Empty) + (password ?? string.Empty)));
                 return CryptographicOperations.FixedTimeEquals(legacyActual, legacyExpected);
             }
             catch (FormatException)
@@ -98,7 +114,13 @@ namespace PharmaLinkApp.Helpers
 
         private static byte[] Derive(string password, byte[] salt, int iterations)
         {
-            return Rfc2898DeriveBytes.Pbkdf2(password ?? string.Empty, salt, iterations, HashAlgorithmName.SHA256, KeyBytes);
+            // The byte overload with a replacing encoder: a pasted password that
+            // contains a lone UTF-16 surrogate made the string overload throw
+            // EncoderFallbackException out of Login. For every valid password the
+            // bytes are identical to the strict encoder's, so existing hashes and
+            // the seed accounts still verify.
+            byte[] passwordBytes = PasswordEncoding.GetBytes(password ?? string.Empty);
+            return Rfc2898DeriveBytes.Pbkdf2(passwordBytes, salt, iterations, HashAlgorithmName.SHA256, KeyBytes);
         }
 
         /// <summary>

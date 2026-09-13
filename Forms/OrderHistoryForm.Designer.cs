@@ -37,6 +37,7 @@ namespace PharmaLinkApp.Forms
             btnRateReview = new Button();
             btnUploadRx = new Button();
             btnCancelOrder = new Button();
+            btnReorder = new Button();
             lblNote = new Label();
             lblStatus = new Label();
 
@@ -162,41 +163,49 @@ namespace PharmaLinkApp.Forms
             btnViewInvoice.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             btnViewInvoice.Location = new Point(20, 574);
             btnViewInvoice.Name = "btnViewInvoice";
-            btnViewInvoice.Size = new Size(180, 40);
+            btnViewInvoice.Size = new Size(140, 40);
             btnViewInvoice.TabIndex = 13;
             btnViewInvoice.Text = "View invoice";
             btnViewInvoice.Click += btnViewInvoice_Click;
             //
             btnRateReview.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            btnRateReview.Location = new Point(210, 574);
+            btnRateReview.Location = new Point(170, 574);
             btnRateReview.Name = "btnRateReview";
-            btnRateReview.Size = new Size(180, 40);
+            btnRateReview.Size = new Size(160, 40);
             btnRateReview.TabIndex = 14;
             btnRateReview.Text = "Rate and review";
             btnRateReview.Click += btnRateReview_Click;
             //
             btnUploadRx.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            btnUploadRx.Location = new Point(400, 574);
+            btnUploadRx.Location = new Point(340, 574);
             btnUploadRx.Name = "btnUploadRx";
-            btnUploadRx.Size = new Size(200, 40);
+            btnUploadRx.Size = new Size(190, 40);
             btnUploadRx.TabIndex = 15;
             btnUploadRx.Text = "Upload prescription";
             btnUploadRx.Click += btnUploadRx_Click;
             //
             btnCancelOrder.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            btnCancelOrder.Location = new Point(610, 574);
+            btnCancelOrder.Location = new Point(540, 574);
             btnCancelOrder.Name = "btnCancelOrder";
-            btnCancelOrder.Size = new Size(150, 40);
+            btnCancelOrder.Size = new Size(130, 40);
             btnCancelOrder.TabIndex = 16;
             btnCancelOrder.Text = "Cancel order";
             btnCancelOrder.Click += btnCancelOrder_Click;
             //
+            btnReorder.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            btnReorder.Location = new Point(680, 574);
+            btnReorder.Name = "btnReorder";
+            btnReorder.Size = new Size(120, 40);
+            btnReorder.TabIndex = 17;
+            btnReorder.Text = "Reorder";
+            btnReorder.Click += btnReorder_Click;
+            //
             lblNote.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             lblNote.AutoSize = false;
-            lblNote.Location = new Point(776, 570);
+            lblNote.Location = new Point(814, 570);
             lblNote.Name = "lblNote";
-            lblNote.Size = new Size(378, 48);
-            lblNote.TabIndex = 17;
+            lblNote.Size = new Size(340, 48);
+            lblNote.TabIndex = 18;
             lblNote.Text = "Rate and review opens once an order is delivered. You can cancel an order until the pharmacy confirms it.";
             //
             lblStatus.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -204,7 +213,7 @@ namespace PharmaLinkApp.Forms
             lblStatus.Location = new Point(20, 620);
             lblStatus.Name = "lblStatus";
             lblStatus.Size = new Size(1134, 20);
-            lblStatus.TabIndex = 18;
+            lblStatus.TabIndex = 19;
             //
             // OrderHistoryForm
             //
@@ -213,6 +222,7 @@ namespace PharmaLinkApp.Forms
             ClientSize = new Size(1180, 650);
             Controls.Add(lblStatus);
             Controls.Add(lblNote);
+            Controls.Add(btnReorder);
             Controls.Add(btnCancelOrder);
             Controls.Add(btnUploadRx);
             Controls.Add(btnRateReview);
@@ -268,6 +278,7 @@ namespace PharmaLinkApp.Forms
         private Button btnRateReview;
         private Button btnUploadRx;
         private Button btnCancelOrder;
+        private Button btnReorder;
         private Label lblNote;
         private Label lblStatus;
     }

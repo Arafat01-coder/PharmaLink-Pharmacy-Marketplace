@@ -28,6 +28,16 @@ namespace PharmaLinkApp.Forms
         private readonly ReportService _reports = new ReportService();
         private readonly PrescriptionService _prescriptions = new PrescriptionService();
         private readonly AuthService _auth = new AuthService();
+        private readonly PharmacyService _pharmacies = new PharmacyService();
+
+        /// <summary>
+        /// How far the orders section (title, hint, filter and the top of the
+        /// grid) is currently pushed down to make room for the warning banner.
+        /// Zero while no banner shows. Moving by the difference from this value,
+        /// rather than to fixed positions, keeps the anchors' work intact when
+        /// the window is resized or maximised.
+        /// </summary>
+        private int _bannerShift;
 
         private Panel[] _tiles;
         private Label _tileOrders;
@@ -47,7 +57,26 @@ namespace PharmaLinkApp.Forms
             UiTheme.MakeResizable(this, Size);
             ApplyTheme();
             BuildTiles();
-            Resize += (s, args) => LayoutTiles();
+            FormWindowState lastState = WindowState;
+            Resize += (s, args) =>
+            {
+                LayoutTiles();
+                LayoutWarningBanner();
+
+                // After Maximise and then Restore, a Fill-mode DataGridView can keep
+                // the wide column widths it had while maximised and show a horizontal
+                // scrollbar. Switching the mode off and back on makes it refit the
+                // columns to the width it has now.
+                if (WindowState != lastState && WindowState != FormWindowState.Minimized)
+                {
+                    foreach (DataGridView grid in new[] { dgvOrders, dgvLowStock })
+                    {
+                        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+                        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                    }
+                }
+                if (WindowState != FormWindowState.Minimized) lastState = WindowState;
+            };
 
             cmbOrderStatus.Items.AddRange(new object[] { "All orders", "Placed", "Confirmed", "Delivered", "Cancelled" });
             cmbOrderStatus.SelectedIndex = 0;
@@ -105,6 +134,12 @@ namespace PharmaLinkApp.Forms
             UiTheme.StylePrimary(btnDeliverOrder);
             UiTheme.StyleDanger(btnCancelOrder);
             UiTheme.StyleSecondary(btnViewInvoice);
+
+            panelWarning.BackColor = UiTheme.WarningBack;
+            panelWarningStripe.BackColor = UiTheme.Warning;
+            lblWarning.Font = UiTheme.FontBody;
+            lblWarning.ForeColor = UiTheme.TextDark;
+            UiTheme.StyleSecondary(btnAcknowledgeWarning);
         }
 
         /// <summary>
@@ -167,6 +202,118 @@ namespace PharmaLinkApp.Forms
         }
 
         // ---------------------------------------------------------------------
+        //  WARNING BANNER
+        //  The Super Admin can send the pharmacy a warning from Moderate Reviews.
+        //  While it is unread it sits between the tiles and the orders, where
+        //  the owner cannot miss it, until the owner presses "I've read this".
+        //  With no unread warning the banner is hidden and nothing is reserved
+        //  for it, so the dashboard looks exactly as it always did.
+        // ---------------------------------------------------------------------
+
+        /// <summary>Tallest the banner grows for a long message; longer text ends in "..." with the full text as a tooltip.</summary>
+        private const int BannerMaxHeight = 90;
+
+        /// <summary>Shows the banner for an unread warning, hides it otherwise, and reflows the orders section.</summary>
+        private void ShowWarning(Models.Pharmacy warning)
+        {
+            if (warning != null && warning.HasUnreadWarning)
+            {
+                lblWarning.Text = "From PharmaLink, " + warning.WarnedAt.Value.ToString("dd MMM yyyy") + ":  " +
+                                  warning.WarningMessage;
+                panelWarning.Visible = true;
+            }
+            else
+            {
+                panelWarning.Visible = false;
+                lblWarning.Text = "";
+            }
+
+            LayoutWarningBanner();
+        }
+
+        /// <summary>
+        /// Places the banner just under the tiles, as wide as the orders grid,
+        /// and tall enough for its text (between its designed height and
+        /// BannerMaxHeight). The orders title, hint, status filter and the top
+        /// edge of the grid then move down by exactly the room the banner needs;
+        /// the grid's bottom edge and everything below it stay put. Runs again
+        /// on Resize, because a wider window needs fewer lines of text.
+        /// </summary>
+        private void LayoutWarningBanner()
+        {
+            if (_tiles == null) return;
+
+            int wantedShift = 0;
+            if (panelWarning.Visible)
+            {
+                int gap = LogicalToDeviceUnits(10);
+                int top = _tiles[0].Bottom + gap;
+
+                // Width first: the label is anchored inside the panel, so its
+                // width follows and the text can be measured against it.
+                panelWarning.SetBounds(dgvOrders.Left, top, dgvOrders.Width, panelWarning.Height);
+
+                int verticalPadding = panelWarning.ClientSize.Height - lblWarning.Height;
+                int textHeight = TextRenderer.MeasureText(lblWarning.Text, lblWarning.Font,
+                    new Size(Math.Max(50, lblWarning.Width), int.MaxValue),
+                    TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height;
+
+                int minimum = btnAcknowledgeWarning.Bottom + btnAcknowledgeWarning.Top;
+                int height = Math.Min(LogicalToDeviceUnits(BannerMaxHeight),
+                                      Math.Max(minimum, textHeight + verticalPadding +
+                                                        (panelWarning.Height - panelWarning.ClientSize.Height)));
+                panelWarning.Height = height;
+                panelWarning.BringToFront();
+
+                int baseTitleTop = lblOrdersTitle.Top - _bannerShift;
+                wantedShift = Math.Max(0, panelWarning.Bottom + gap - baseTitleTop);
+            }
+
+            int delta = wantedShift - _bannerShift;
+            if (delta == 0) return;
+
+            SuspendLayout();
+            lblOrdersTitle.Top += delta;
+            lblOrdersHint.Top += delta;
+            lblOrderStatusFilter.Top += delta;
+            cmbOrderStatus.Top += delta;
+            dgvOrders.SetBounds(dgvOrders.Left, dgvOrders.Top + delta, dgvOrders.Width, dgvOrders.Height - delta);
+            ResumeLayout(true);
+
+            _bannerShift = wantedShift;
+        }
+
+        /// <summary>
+        /// Records that the owner has read the warning. The database keeps the
+        /// first acknowledgement only, so if it was already read (for example in
+        /// a second session) the owner is told and the banner still goes away.
+        /// </summary>
+        private void btnAcknowledgeWarning_Click(object sender, EventArgs e)
+        {
+            if (!SessionStillValid()) return;
+
+            bool changed;
+            try
+            {
+                changed = _pharmacies.AcknowledgeWarning(UserSession.PharmacyId);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("The notice could not be marked as read.\r\n\r\n" + DbHelper.Describe(ex),
+                    "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            ShowWarning(null);
+
+            if (!changed)
+            {
+                MessageBox.Show("This notice had already been marked as read, so nothing changed.",
+                    "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        // ---------------------------------------------------------------------
         //  DATA
         // ---------------------------------------------------------------------
 
@@ -194,6 +341,8 @@ namespace PharmaLinkApp.Forms
                                     "   |   " + _medicines.CountMedicines(UserSession.PharmacyId) + " medicines listed" +
                                     "   |   " + pendingOrders + " order(s) waiting to be confirmed" +
                                     "   |   " + pendingRx + " prescription(s) to verify";
+
+                ShowWarning(_pharmacies.GetWarning(UserSession.PharmacyId));
 
                 LoadOrders();
 
@@ -252,20 +401,23 @@ namespace PharmaLinkApp.Forms
                 dgvOrders.Columns["Status"].HeaderText = "Status";
                 dgvOrders.Columns["RxState"].HeaderText = "Prescription";
                 dgvOrders.Columns["DeliveryAddress"].Visible = false;
+                // The delivery charge is the same flat fee on every order and is
+                // already inside Total, so it gives up its column to Prescription.
+                dgvOrders.Columns["DeliveryCharge"].Visible = false;
 
-                // Weights share the width; the minimums stop short columns such
-                // as Delivery and Status being cut to "Delivei" and "Confi...".
-                UiTheme.SizeColumn(dgvOrders, "OrderId", 45, 60);
-                UiTheme.SizeColumn(dgvOrders, "OrderDate", 85, 110);
-                UiTheme.SizeColumn(dgvOrders, "CustomerName", 110, 110);
-                UiTheme.SizeColumn(dgvOrders, "CustomerPhone", 85, 100);
-                UiTheme.SizeColumn(dgvOrders, "Items", 40, 55);
-                UiTheme.SizeColumn(dgvOrders, "ItemsTotal", 65, 85);
-                UiTheme.SizeColumn(dgvOrders, "DeliveryCharge", 60, 75);
-                UiTheme.SizeColumn(dgvOrders, "TotalAmount", 65, 85);
-                UiTheme.SizeColumn(dgvOrders, "PaymentMethod", 85, 105);
-                UiTheme.SizeColumn(dgvOrders, "Status", 65, 85);
-                UiTheme.SizeColumn(dgvOrders, "RxState", 80, 100);
+                // Weights share the width; the DPI-scaled minimums stop short
+                // columns such as Status being cut to "Confi..." while still adding
+                // up to less than the grid, so no horizontal scrollbar appears.
+                UiTheme.SizeColumn(dgvOrders, "OrderId", 45, 52);
+                UiTheme.SizeColumn(dgvOrders, "OrderDate", 85, 96);
+                UiTheme.SizeColumn(dgvOrders, "CustomerName", 100, 90);
+                UiTheme.SizeColumn(dgvOrders, "CustomerPhone", 80, 86);
+                UiTheme.SizeColumn(dgvOrders, "Items", 40, 44);
+                UiTheme.SizeColumn(dgvOrders, "ItemsTotal", 65, 70);
+                UiTheme.SizeColumn(dgvOrders, "TotalAmount", 65, 70);
+                UiTheme.SizeColumn(dgvOrders, "PaymentMethod", 85, 80);
+                UiTheme.SizeColumn(dgvOrders, "Status", 65, 76);
+                UiTheme.SizeColumn(dgvOrders, "RxState", 80, 90);
             }
 
             UpdateOrderButtons();

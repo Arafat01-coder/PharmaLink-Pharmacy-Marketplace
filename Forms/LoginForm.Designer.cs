@@ -35,6 +35,8 @@ namespace PharmaLinkApp.Forms
             txtPassword = new TextBox();
             lblPasswordError = new Label();
             chkShowPassword = new CheckBox();
+            btnForgotPassword = new Button();
+            chkRememberMe = new CheckBox();
             btnLogin = new Button();
             lblFormError = new Label();
             lblNoAccount = new Label();
@@ -125,13 +127,15 @@ namespace PharmaLinkApp.Forms
             panelCard.Controls.Add(txtPassword);
             panelCard.Controls.Add(lblPasswordError);
             panelCard.Controls.Add(chkShowPassword);
+            panelCard.Controls.Add(btnForgotPassword);
+            panelCard.Controls.Add(chkRememberMe);
             panelCard.Controls.Add(btnLogin);
             panelCard.Controls.Add(lblFormError);
             panelCard.Controls.Add(lblNoAccount);
             panelCard.Controls.Add(btnGoSignUp);
-            panelCard.Location = new Point(468, 74);
+            panelCard.Location = new Point(468, 62);
             panelCard.Name = "panelCard";
-            panelCard.Size = new Size(400, 412);
+            panelCard.Size = new Size(400, 436);
             panelCard.TabIndex = 1;
             //
             // lblTitle
@@ -215,39 +219,58 @@ namespace PharmaLinkApp.Forms
             chkShowPassword.Text = "Show password";
             chkShowPassword.CheckedChanged += chkShowPassword_CheckedChanged;
             //
+            // btnForgotPassword
+            //
+            btnForgotPassword.Location = new Point(222, 242);
+            btnForgotPassword.Name = "btnForgotPassword";
+            btnForgotPassword.Size = new Size(150, 26);
+            btnForgotPassword.TabIndex = 10;
+            btnForgotPassword.Text = "Forgot password?";
+            btnForgotPassword.TextAlign = ContentAlignment.MiddleRight;
+            btnForgotPassword.Click += btnForgotPassword_Click;
+            //
+            // chkRememberMe
+            //
+            chkRememberMe.AutoSize = true;
+            chkRememberMe.Location = new Point(26, 270);
+            chkRememberMe.Name = "chkRememberMe";
+            chkRememberMe.Size = new Size(160, 22);
+            chkRememberMe.TabIndex = 9;
+            chkRememberMe.Text = "Remember my email";
+            //
             // btnLogin
             //
-            btnLogin.Location = new Point(26, 280);
+            btnLogin.Location = new Point(26, 304);
             btnLogin.Name = "btnLogin";
             btnLogin.Size = new Size(346, 42);
-            btnLogin.TabIndex = 9;
+            btnLogin.TabIndex = 11;
             btnLogin.Text = "Log in";
             btnLogin.Click += btnLogin_Click;
             //
             // lblFormError
             //
             lblFormError.AutoSize = false;
-            lblFormError.Location = new Point(26, 326);
+            lblFormError.Location = new Point(26, 350);
             lblFormError.Name = "lblFormError";
             lblFormError.Size = new Size(346, 34);
-            lblFormError.TabIndex = 10;
+            lblFormError.TabIndex = 12;
             lblFormError.Visible = false;
             //
             // lblNoAccount
             //
             lblNoAccount.AutoSize = true;
-            lblNoAccount.Location = new Point(26, 372);
+            lblNoAccount.Location = new Point(26, 396);
             lblNoAccount.Name = "lblNoAccount";
             lblNoAccount.Size = new Size(140, 18);
-            lblNoAccount.TabIndex = 11;
+            lblNoAccount.TabIndex = 13;
             lblNoAccount.Text = "New to PharmaLink?";
             //
             // btnGoSignUp
             //
-            btnGoSignUp.Location = new Point(190, 366);
+            btnGoSignUp.Location = new Point(190, 390);
             btnGoSignUp.Name = "btnGoSignUp";
             btnGoSignUp.Size = new Size(182, 32);
-            btnGoSignUp.TabIndex = 12;
+            btnGoSignUp.TabIndex = 14;
             btnGoSignUp.Text = "Create an account";
             btnGoSignUp.Click += btnGoSignUp_Click;
             //
@@ -290,6 +313,8 @@ namespace PharmaLinkApp.Forms
         private TextBox txtPassword;
         private Label lblPasswordError;
         private CheckBox chkShowPassword;
+        private Button btnForgotPassword;
+        private CheckBox chkRememberMe;
         private Button btnLogin;
         private Label lblFormError;
         private Label lblNoAccount;

@@ -80,7 +80,9 @@ namespace PharmaLinkApp.Forms
             Panel t2 = UiTheme.BuildTile("BELOW MINIMUM STOCK", UiTheme.Danger, out _tileLowStock);
             Panel t3 = UiTheme.BuildTile("UNITS ON THE SHELF", UiTheme.Accent, out _tileUnitsInStock);
             Panel t4 = UiTheme.BuildTile("VALUE OF STOCK HELD", UiTheme.Success, out _tileStockValue);
-            Panel t5 = UiTheme.BuildTile("EXPIRED OR EXPIRING IN " + ExpiryWarningDays + " DAYS", UiTheme.Warning, out _tileExpiring);
+            // Short enough for a fifth-width tile at 125% scaling; already expired
+            // medicines are counted too, since they also "expire within" the window.
+            Panel t5 = UiTheme.BuildTile("EXPIRES WITHIN " + ExpiryWarningDays + " DAYS", UiTheme.Warning, out _tileExpiring);
 
             _tiles = new[] { t1, t2, t3, t4, t5 };
             LayoutTiles();

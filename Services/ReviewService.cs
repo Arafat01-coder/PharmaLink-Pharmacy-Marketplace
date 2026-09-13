@@ -195,13 +195,17 @@ WHERE   m.PharmacyId = @Id AND r.IsHidden = 0;",
         /// the purchase, so a review always traces back to a real delivery.
         /// With reportedOnly the queue shows only reviews a pharmacy owner has
         /// reported, whatever their rating, with the owner's reason.
+        ///
+        /// PharmacyId rides along (the screen hides it) so the Super Admin can
+        /// warn the shop behind a review, or open its record, without a second
+        /// lookup by name - two shops could one day share a name, an id cannot.
         /// </summary>
         public DataTable GetModerationQueue(int maxRating, bool includeHidden, bool reportedOnly)
         {
             const string sql = @"
 SELECT  r.ReviewId, u.FullName AS Reviewer, m.MedicineName, ph.PharmacyName,
         r.Rating, r.Comment, r.ReviewDate, r.OrderId, r.IsHidden,
-        r.IsReported, r.ReportReason, r.ReportedAt
+        r.IsReported, r.ReportReason, r.ReportedAt, m.PharmacyId
 FROM    Reviews r
         INNER JOIN Users      u  ON u.UserId     = r.CustomerId
         INNER JOIN Medicines  m  ON m.MedicineId = r.MedicineId

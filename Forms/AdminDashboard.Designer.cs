@@ -33,6 +33,11 @@ namespace PharmaLinkApp.Forms
             lblHeaderSub = new Label();
             btnRefresh = new Button();
 
+            panelWarning = new Panel();
+            panelWarningStripe = new Panel();
+            lblWarning = new Label();
+            btnAcknowledgeWarning = new Button();
+
             lblOrdersTitle = new Label();
             lblOrdersHint = new Label();
             lblOrderStatusFilter = new Label();
@@ -185,6 +190,44 @@ namespace PharmaLinkApp.Forms
             btnRefresh.Text = "Refresh";
             btnRefresh.Click += btnRefresh_Click;
             //
+            // panelWarning: the Super Admin's warning banner. Hidden until
+            // LoadEverything finds an unread warning; AdminDashboard then places
+            // it under the tiles and moves the orders section down to make room.
+            panelWarning.Controls.Add(lblWarning);
+            panelWarning.Controls.Add(btnAcknowledgeWarning);
+            panelWarning.Controls.Add(panelWarningStripe);
+            panelWarning.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            panelWarning.BorderStyle = BorderStyle.FixedSingle;
+            panelWarning.Location = new Point(250, 178);
+            panelWarning.Name = "panelWarning";
+            panelWarning.Size = new Size(990, 56);
+            panelWarning.TabIndex = 14;
+            panelWarning.Visible = false;
+            //
+            panelWarningStripe.Dock = DockStyle.Left;
+            panelWarningStripe.Location = new Point(0, 0);
+            panelWarningStripe.Name = "panelWarningStripe";
+            panelWarningStripe.Size = new Size(5, 54);
+            panelWarningStripe.TabIndex = 0;
+            //
+            lblWarning.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            lblWarning.AutoSize = false;
+            lblWarning.AutoEllipsis = true;
+            lblWarning.Location = new Point(16, 6);
+            lblWarning.Name = "lblWarning";
+            lblWarning.Size = new Size(820, 42);
+            lblWarning.TabIndex = 1;
+            lblWarning.TextAlign = ContentAlignment.MiddleLeft;
+            lblWarning.UseMnemonic = false;
+            //
+            btnAcknowledgeWarning.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnAcknowledgeWarning.Location = new Point(846, 10);
+            btnAcknowledgeWarning.Name = "btnAcknowledgeWarning";
+            btnAcknowledgeWarning.Size = new Size(130, 34);
+            btnAcknowledgeWarning.TabIndex = 2;
+            btnAcknowledgeWarning.Text = "I've read this";
+            btnAcknowledgeWarning.Click += btnAcknowledgeWarning_Click;
+            //
             lblOrdersTitle.AutoSize = true;
             lblOrdersTitle.Location = new Point(250, 190);
             lblOrdersTitle.Name = "lblOrdersTitle";
@@ -294,6 +337,7 @@ namespace PharmaLinkApp.Forms
             Controls.Add(lblOrderStatusFilter);
             Controls.Add(lblOrdersHint);
             Controls.Add(lblOrdersTitle);
+            Controls.Add(panelWarning);
             Controls.Add(panelHeader);
             Controls.Add(panelSide);
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -331,6 +375,11 @@ namespace PharmaLinkApp.Forms
         private Label lblHeaderTitle;
         private Label lblHeaderSub;
         private Button btnRefresh;
+
+        private Panel panelWarning;
+        private Panel panelWarningStripe;
+        private Label lblWarning;
+        private Button btnAcknowledgeWarning;
 
         private Label lblOrdersTitle;
         private Label lblOrdersHint;

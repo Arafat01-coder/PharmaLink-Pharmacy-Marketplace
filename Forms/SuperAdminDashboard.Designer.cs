@@ -36,6 +36,7 @@ namespace PharmaLinkApp.Forms
 
             lblPendingTitle = new Label();
             lblPendingHint = new Label();
+            btnResetRequests = new Button();
             dgvPending = new DataGridView();
             btnApprove = new Button();
             btnReject = new Button();
@@ -216,6 +217,18 @@ namespace PharmaLinkApp.Forms
             lblPendingHint.TabIndex = 3;
             lblPendingHint.Text = "Check the DGDA licence number before approving. Approve sets the shop to Approved and the owner's account to Active.";
             //
+            // btnResetRequests
+            //
+            btnResetRequests.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnResetRequests.Location = new Point(740, 188);
+            btnResetRequests.Name = "btnResetRequests";
+            btnResetRequests.Size = new Size(500, 28);
+            btnResetRequests.TabIndex = 11;
+            btnResetRequests.Text = "Password reset requests waiting - open Manage Users";
+            btnResetRequests.TextAlign = ContentAlignment.MiddleRight;
+            btnResetRequests.Visible = false;
+            btnResetRequests.Click += btnResetRequests_Click;
+            //
             // dgvPending
             //
             dgvPending.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -291,6 +304,7 @@ namespace PharmaLinkApp.Forms
             Controls.Add(btnApprove);
             Controls.Add(dgvPending);
             Controls.Add(lblPendingHint);
+            Controls.Add(btnResetRequests);
             Controls.Add(lblPendingTitle);
             Controls.Add(panelHeader);
             Controls.Add(panelSide);
@@ -330,6 +344,7 @@ namespace PharmaLinkApp.Forms
 
         private Label lblPendingTitle;
         private Label lblPendingHint;
+        private Button btnResetRequests;
         private DataGridView dgvPending;
         private Button btnApprove;
         private Button btnReject;

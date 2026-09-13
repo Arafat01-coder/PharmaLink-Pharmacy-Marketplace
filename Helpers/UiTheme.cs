@@ -296,6 +296,24 @@ namespace PharmaLinkApp.Helpers
         }
 
         /// <summary>
+        /// Gives the grid a current cell on its first row when it has none.
+        ///
+        /// Hiding the column that holds the current cell (a list screen hides
+        /// its id column straight after binding) silently sets CurrentCell to
+        /// null, while the first row still looks highlighted. Every screen reads
+        /// the selected record from CurrentRow, so without this the details,
+        /// preview and action buttons stayed empty until the user clicked a row.
+        /// Call it after the columns are configured and any "keep the same row
+        /// selected" step has run; <paramref name="columnName"/> must be visible.
+        /// </summary>
+        public static void EnsureCurrentCell(DataGridView grid, string columnName)
+        {
+            if (grid.CurrentCell != null || grid.Rows.Count == 0) return;
+            if (!grid.Columns.Contains(columnName) || !grid.Columns[columnName].Visible) return;
+            grid.CurrentCell = grid.Rows[0].Cells[columnName];
+        }
+
+        /// <summary>
         /// Draws a centred grey message on an empty grid, for example
         /// "No orders match these filters", so an empty screen never looks broken.
         /// Call once; the message is read from the grid's Tag each time it paints.

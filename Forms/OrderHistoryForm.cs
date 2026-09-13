@@ -1,5 +1,6 @@
 using System.Data;
 using System.Drawing;
+using System.Text;
 using System.Windows.Forms;
 using PharmaLinkApp.Database;
 using PharmaLinkApp.Helpers;
@@ -27,6 +28,7 @@ namespace PharmaLinkApp.Forms
 
         private readonly OrderService _orders = new OrderService();
         private readonly PrescriptionService _prescriptions = new PrescriptionService();
+        private readonly CartService _cart = new CartService();
         private bool _loading = true;
 
         /// <summary>True while the grid is being rebound, so SelectionChanged does not hit the database per row.</summary>
@@ -83,6 +85,7 @@ namespace PharmaLinkApp.Forms
             UiTheme.StylePrimary(btnRateReview);
             UiTheme.StyleSecondary(btnUploadRx);
             UiTheme.StyleDanger(btnCancelOrder);
+            UiTheme.StyleSuccess(btnReorder);
             UiTheme.StyleGrid(dgvOrders);
             UiTheme.StyleGrid(dgvOrderItems);
             UiTheme.EnableEmptyMessage(dgvOrders, "No orders match these filters.");
@@ -99,7 +102,7 @@ namespace PharmaLinkApp.Forms
             cmbPharmacy.Items.Clear();
             cmbPharmacy.Items.Add("All pharmacies");
             foreach (DataRow row in _orders.GetPharmaciesForCustomer(UserSession.UserId).Rows)
-                cmbPharmacy.Items.Add(DbHelper.GetInt(row, "PharmacyId") + " - " + DbHelper.GetString(row, "PharmacyName"));
+                cmbPharmacy.Items.Add(new ListItem(DbHelper.GetInt(row, "PharmacyId"), DbHelper.GetString(row, "PharmacyName")));
         }
 
         private void ResetFilters()
@@ -112,9 +115,7 @@ namespace PharmaLinkApp.Forms
 
         private int SelectedPharmacyId()
         {
-            if (cmbPharmacy.SelectedIndex <= 0) return 0;
-            string text = cmbPharmacy.SelectedItem.ToString();
-            return int.Parse(text.Substring(0, text.IndexOf(' ')));
+            return cmbPharmacy.SelectedItem is ListItem item ? item.Id : 0;
         }
 
         // ---------------------------------------------------------------------
@@ -262,6 +263,7 @@ namespace PharmaLinkApp.Forms
                 btnRateReview.Text = "Rate and review";
                 btnUploadRx.Enabled = false;
                 btnCancelOrder.Enabled = false;
+                btnReorder.Enabled = false;
                 lblNote.Text = DefaultNote;
                 return;
             }
@@ -304,6 +306,11 @@ namespace PharmaLinkApp.Forms
 
             bool placed = status == "Placed";
             btnCancelOrder.Enabled = placed;
+
+            // A Placed order is still on its way to being filled, so reordering it
+            // would only double the basket; once confirmed, delivered or cancelled
+            // it is a fair shopping list to repeat.
+            btnReorder.Enabled = status == "Delivered" || status == "Cancelled" || status == "Confirmed";
             btnUploadRx.Enabled = placed && (rxState == "Missing" || rxState == "Rejected");
             btnUploadRx.Text = rxState == "Rejected" ? "Upload new prescription" : "Upload prescription";
 
@@ -435,6 +442,118 @@ namespace PharmaLinkApp.Forms
             LoadOrders(cancelled
                 ? "Order #" + orderId + " has been cancelled."
                 : "Order #" + orderId + " could not be cancelled - the pharmacy may already have confirmed it.");
+        }
+
+        /// <summary>
+        /// Puts every medicine from the selected order back in the cart with the
+        /// same quantities, then shows one summary instead of a box per line.
+        ///
+        /// Each line goes through CartService.AddOrIncrease, the same rule the
+        /// Add to cart buttons use, so a medicine that has been delisted, has
+        /// expired, is out of stock or belongs to a pharmacy that is no longer
+        /// Approved is skipped with its reason rather than smuggled in. The
+        /// lines are read with the customer's id in the query, so a stale grid
+        /// can never copy another customer's order. The cart prices everything
+        /// at today's price, and the summary says so.
+        /// </summary>
+        private void btnReorder_Click(object sender, EventArgs e)
+        {
+            int orderId = SelectedOrderId();
+            if (orderId == 0) return;
+
+            DataTable lines;
+            try
+            {
+                lines = _orders.GetReorderLines(orderId, UserSession.UserId);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("The items on order #" + orderId + " could not be read.\r\n\r\n" + DbHelper.Describe(ex),
+                    "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (lines.Rows.Count == 0)
+            {
+                MessageBox.Show("Order #" + orderId + " has no items that can be reordered from this account.",
+                    "Reorder", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            int added = 0;
+            List<string> skipped = new List<string>();
+            string stoppedBecause = null;
+
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                foreach (DataRow line in lines.Rows)
+                {
+                    string name = DbHelper.GetString(line, "MedicineName");
+                    string strength = DbHelper.GetString(line, "Strength");
+                    if (!string.IsNullOrWhiteSpace(strength)) name += " " + strength;
+                    int quantity = DbHelper.GetInt(line, "Quantity");
+
+                    try
+                    {
+                        string message;
+                        if (_cart.AddOrIncrease(UserSession.UserId, DbHelper.GetInt(line, "MedicineId"), quantity, out message))
+                            added++;
+                        else
+                            skipped.Add(name + " (x" + quantity + "): " + message);
+                    }
+                    catch (Exception ex)
+                    {
+                        // A database failure will fail every remaining line the same
+                        // way, so stop and say so once instead of repeating it.
+                        stoppedBecause = DbHelper.Describe(ex);
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
+
+            StringBuilder summary = new StringBuilder();
+            summary.Append("Added " + added + " item(s) to your cart");
+            summary.Append(added > 0 ? ", at today's prices.\r\n" : ".\r\n");
+
+            if (skipped.Count > 0)
+            {
+                summary.Append("\r\nNot added:\r\n");
+                foreach (string item in skipped) summary.Append("  - " + item + "\r\n");
+            }
+
+            if (stoppedBecause != null)
+                summary.Append("\r\nReorder stopped part way because of a problem:\r\n" + stoppedBecause + "\r\n");
+
+            if (added > 0)
+            {
+                summary.Append("\r\nOpen cart now?");
+                DialogResult answer = MessageBox.Show(summary.ToString(), "Reorder",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+
+                if (answer == DialogResult.Yes)
+                {
+                    using (CartForm cart = new CartForm())
+                    {
+                        cart.ShowDialog(this);
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show(summary.ToString(), "Reorder", MessageBoxButtons.OK,
+                    stoppedBecause != null ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
+            }
+
+            // The cart may have been checked out, which adds a new order to this list.
+            LoadOrders(added > 0
+                ? "Order #" + orderId + ": " + added + " item(s) added to your cart" +
+                  (skipped.Count > 0 ? ", " + skipped.Count + " could not be added." : ".")
+                : null);
         }
 
         private void Filter_Changed(object sender, EventArgs e) => LoadOrders();
