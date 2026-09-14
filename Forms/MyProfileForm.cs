@@ -12,9 +12,11 @@ namespace PharmaLinkApp.Forms
     /// whoever is doing it.
     ///
     /// Email is read only: it is the login identifier. The password change
-    /// verifies the current password inside the same UPDATE statement, so a
-    /// wrong entry updates no rows and the form reports failure without the
-    /// stored hash ever being compared in memory.
+    /// (AuthService.ChangePassword) reads the stored salt and hash, verifies
+    /// the current password against them in memory, and only then writes the
+    /// new hash. The UPDATE also requires the stored hash to be unchanged, so
+    /// a password changed elsewhere at the same moment is not overwritten; in
+    /// either case ChangePassword returns false and nothing is changed.
     ///
     /// Messages on this screen are for the account holder, so they talk about
     /// fields ("mobile number") and never about tables or constraint names.
@@ -264,8 +266,9 @@ namespace PharmaLinkApp.Forms
                 }
                 else
                 {
-                    // The UPDATE only matches the stored password, so a wrong
-                    // current password simply changes no rows.
+                    // ChangePassword returns false when the current password does
+                    // not verify, or when the password was changed elsewhere at
+                    // the same moment; either way nothing was written.
                     UiTheme.ShowError(lblCurrentError, txtCurrent,
                         "That is not your current password, so nothing was changed.");
                     txtCurrent.SelectAll();

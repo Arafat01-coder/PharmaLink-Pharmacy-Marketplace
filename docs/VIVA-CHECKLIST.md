@@ -98,8 +98,8 @@ navigation diagrams and the 24 screenshots of the running application. It was
 rewritten on 14 September 2026 to match the finished code.
 
 Read `docs/REPORT-VS-CODE.md` before the viva. It summarises what changed in the
-report and the few places where a diagram or a code comment still shows the
-older design. Each one is a question an examiner can ask, and each has a short
+report and the few places where something still differs: the two design-time
+diagrams and two service methods that no screen calls. Each one is a question an examiner can ask, and each has a short
 honest answer — but only if you know it is coming.
 
 ---

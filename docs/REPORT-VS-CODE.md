@@ -43,13 +43,7 @@ report, the second lists the few places where something still differs.
    script, and each added column depends only on its table's key, so the tables
    are still in 3NF."
 
-2. **A stale code comment.** The summary comment at the top of
-   `Forms/MyProfileForm.cs` still describes the old password check ("a wrong
-   entry updates no rows"). The code itself verifies the current password in
-   memory and guards the `UPDATE` against a concurrent change, which is what
-   Section 7.3.18 describes.
-
-3. **Service methods with no screen.** `ReportService.GetRevenueByArea`
+2. **Service methods with no screen.** `ReportService.GetRevenueByArea`
    (Section 7.3.13) and `CategoryService.Delete` exist but no form calls them.
    The report states this rather than claiming a screen for them.
 
