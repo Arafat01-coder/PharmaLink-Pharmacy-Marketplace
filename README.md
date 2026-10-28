@@ -23,6 +23,7 @@ Supervised by **Dr. Md. Iftekharul Mobin**
 |----------|------|
 | 🎥 **Demo video** | **[Watch the demonstration](https://drive.google.com/file/d/1v8iwB8IOXfUYcrLxpBvNW0qCfDJxXsAL/view?usp=drive_link)** — see [Section 18](#18-demo-video) for per-member timestamps |
 | 📄 **Project report (PDF)** | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) · editable [`docs/Project_Report.docx`](docs/Project_Report.docx) |
+| 📝 **SE project proposal** | [`docs/se-proposal/PharmaLink_Project_Proposal.docx`](docs/se-proposal/PharmaLink_Project_Proposal.docx) — Software Engineering course, Fall 2026–27 (incremental model diagram: [`incremental-model.png`](docs/se-proposal/incremental-model.png)) |
 | 🗄️ **Database script (SQL)** | [`PharmaLinkDB_Setup.sql`](PharmaLinkDB_Setup.sql) |
 | 🖼️ **Screenshots** | [`docs/screenshots/`](docs/screenshots) |
 | 📐 **Diagrams** | [`docs/diagrams/`](docs/diagrams) |
