@@ -25,6 +25,13 @@
 --   8. Pharmacies    WarningMessage, WarnedAt, WarningAcknowledgedAt
 --                    (Super Admin warning shown to the owner)
 --
+--   9. Users         CK_Users_Type allows 'DeliveryMan'
+--  10. Payments      new table, one row per order, back-filled for every
+--                    existing order (see step 10 for the rules)
+--  11. Deliveries    new table and its indexes (no back-fill: orders that
+--                    were delivered before this upgrade were delivered by
+--                    the pharmacy itself)
+--
 --  Steps 7 and 8 only add columns: existing accounts start with
 --  MustChangePassword = 0 and no reset request, and no pharmacy starts warned.
 --
@@ -38,6 +45,9 @@ GO
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
+-- Needed by the filtered indexes in steps 10 and 11; sqlcmd leaves it off.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 GO
 
 
@@ -297,6 +307,123 @@ GO
 
 
 -- =============================================================================
+--  9. Users - CK_Users_Type allows the DeliveryMan role
+-- =============================================================================
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints
+               WHERE name = 'CK_Users_Type' AND definition LIKE '%DeliveryMan%')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_Users_Type')
+        ALTER TABLE dbo.Users DROP CONSTRAINT CK_Users_Type;
+
+    ALTER TABLE dbo.Users ADD CONSTRAINT CK_Users_Type
+        CHECK (UserType IN ('SuperAdmin', 'Admin', 'Customer', 'DeliveryMan'));
+    PRINT 'CK_Users_Type now allows DeliveryMan.';
+END
+GO
+
+
+-- =============================================================================
+--  10. Payments - one row per order
+--  Every existing order gets a row, worked out from what is already known:
+--   - an online order (bKash, Nagad, Card) that was not cancelled was paid
+--     when it was placed; it predates the gateway, so it has no reference;
+--   - a cancelled online order is Refunded;
+--   - a delivered cash order is Paid (the pharmacy collected the cash itself);
+--   - a cancelled cash order is Cancelled, and any other cash order is Pending.
+-- =============================================================================
+IF OBJECT_ID('dbo.Payments', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Payments (
+        PaymentId       INT             IDENTITY(1,1)   NOT NULL,
+        OrderId         INT                             NOT NULL,
+        Status          NVARCHAR(15)                    NOT NULL
+            CONSTRAINT DF_Payments_Status   DEFAULT ('Pending'),
+        TransactionRef  NVARCHAR(40)                        NULL,
+        CardLast4       CHAR(4)                             NULL,
+        PaidAt          DATETIME2(0)                        NULL,
+        CollectedById   INT                                 NULL,
+        RefundedAt      DATETIME2(0)                        NULL,
+
+        CONSTRAINT PK_Payments              PRIMARY KEY (PaymentId),
+        CONSTRAINT UQ_Payments_Order        UNIQUE (OrderId),
+        CONSTRAINT FK_Payments_Order        FOREIGN KEY (OrderId)       REFERENCES dbo.Orders(OrderId) ON DELETE CASCADE,
+        CONSTRAINT FK_Payments_Collector    FOREIGN KEY (CollectedById) REFERENCES dbo.Users(UserId),
+        CONSTRAINT CK_Payments_Status       CHECK (Status IN ('Pending', 'Paid', 'Refunded', 'Cancelled')),
+        CONSTRAINT CK_Payments_PaidAt       CHECK (Status NOT IN ('Paid', 'Refunded') OR PaidAt IS NOT NULL),
+        CONSTRAINT CK_Payments_CardLast4    CHECK (CardLast4 IS NULL OR CardLast4 LIKE '[0-9][0-9][0-9][0-9]')
+    );
+    PRINT 'Payments table created.';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_Payments_TransactionRef')
+BEGIN
+    CREATE UNIQUE INDEX UX_Payments_TransactionRef ON dbo.Payments(TransactionRef)
+        WHERE TransactionRef IS NOT NULL;
+    PRINT 'UX_Payments_TransactionRef created.';
+END
+GO
+
+INSERT INTO dbo.Payments (OrderId, Status, PaidAt, RefundedAt)
+SELECT  o.OrderId,
+        CASE WHEN o.PaymentMethod <> 'CashOnDelivery' AND o.Status = 'Cancelled' THEN 'Refunded'
+             WHEN o.PaymentMethod <> 'CashOnDelivery'                          THEN 'Paid'
+             WHEN o.Status = 'Delivered'                                       THEN 'Paid'
+             WHEN o.Status = 'Cancelled'                                       THEN 'Cancelled'
+             ELSE 'Pending' END,
+        CASE WHEN o.PaymentMethod <> 'CashOnDelivery' OR o.Status = 'Delivered' THEN o.OrderDate END,
+        CASE WHEN o.PaymentMethod <> 'CashOnDelivery' AND o.Status = 'Cancelled' THEN o.OrderDate END
+FROM    dbo.Orders o
+WHERE   NOT EXISTS (SELECT 1 FROM dbo.Payments p WHERE p.OrderId = o.OrderId);
+
+IF @@ROWCOUNT > 0 PRINT 'Payments back-filled for existing orders.';
+GO
+
+
+-- =============================================================================
+--  11. Deliveries - which delivery man carried an order
+-- =============================================================================
+IF OBJECT_ID('dbo.Deliveries', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Deliveries (
+        DeliveryId      INT             IDENTITY(1,1)   NOT NULL,
+        OrderId         INT                             NOT NULL,
+        DeliveryManId   INT                             NOT NULL,
+        Status          NVARCHAR(15)                    NOT NULL
+            CONSTRAINT DF_Deliveries_Status   DEFAULT ('Assigned'),
+        AcceptedAt      DATETIME2(0)                    NOT NULL
+            CONSTRAINT DF_Deliveries_Accepted DEFAULT (SYSDATETIME()),
+        PickedUpAt      DATETIME2(0)                        NULL,
+        DeliveredAt     DATETIME2(0)                        NULL,
+        ReleasedAt      DATETIME2(0)                        NULL,
+
+        CONSTRAINT PK_Deliveries                PRIMARY KEY (DeliveryId),
+        CONSTRAINT FK_Deliveries_Order          FOREIGN KEY (OrderId)       REFERENCES dbo.Orders(OrderId) ON DELETE CASCADE,
+        CONSTRAINT FK_Deliveries_DeliveryMan    FOREIGN KEY (DeliveryManId) REFERENCES dbo.Users(UserId),
+        CONSTRAINT CK_Deliveries_Status         CHECK (Status IN ('Assigned', 'PickedUp', 'Delivered', 'Released', 'Cancelled')),
+        CONSTRAINT CK_Deliveries_DeliveredAt    CHECK (Status <> 'Delivered' OR DeliveredAt IS NOT NULL)
+    );
+    PRINT 'Deliveries table created.';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Deliveries_DeliveryMan')
+BEGIN
+    CREATE INDEX IX_Deliveries_DeliveryMan ON dbo.Deliveries(DeliveryManId, Status);
+    PRINT 'IX_Deliveries_DeliveryMan created.';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_Deliveries_ActiveOrder')
+BEGIN
+    CREATE UNIQUE INDEX UX_Deliveries_ActiveOrder ON dbo.Deliveries(OrderId)
+        WHERE Status IN ('Assigned', 'PickedUp', 'Delivered');
+    PRINT 'UX_Deliveries_ActiveOrder created.';
+END
+GO
+
+
+-- =============================================================================
 --  VERIFY
 --  Every row should say OK.
 -- =============================================================================
@@ -328,6 +455,18 @@ FROM (
     UNION ALL SELECT 'IX_Reviews_Customer',    CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Reviews_Customer') THEN 1 ELSE 0 END
     UNION ALL SELECT 'IX_Prescriptions_Order', CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Prescriptions_Order') THEN 1 ELSE 0 END
     UNION ALL SELECT 'IX_Pharmacies_Status',   CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Pharmacies_Status') THEN 1 ELSE 0 END
+    UNION ALL SELECT 'CK_Users_Type allows DeliveryMan',
+              CASE WHEN EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_Users_Type' AND definition LIKE '%DeliveryMan%') THEN 1 ELSE 0 END
+    UNION ALL SELECT 'Payments table',         CASE WHEN OBJECT_ID('dbo.Payments', 'U') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'Every order has a payment row',
+              CASE WHEN OBJECT_ID('dbo.Payments', 'U') IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM dbo.Orders o
+                                    WHERE NOT EXISTS (SELECT 1 FROM dbo.Payments p WHERE p.OrderId = o.OrderId))
+                   THEN 1 ELSE 0 END
+    UNION ALL SELECT 'UX_Payments_TransactionRef', CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_Payments_TransactionRef') THEN 1 ELSE 0 END
+    UNION ALL SELECT 'Deliveries table',       CASE WHEN OBJECT_ID('dbo.Deliveries', 'U') IS NULL THEN 0 ELSE 1 END
+    UNION ALL SELECT 'IX_Deliveries_DeliveryMan', CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Deliveries_DeliveryMan') THEN 1 ELSE 0 END
+    UNION ALL SELECT 'UX_Deliveries_ActiveOrder', CASE WHEN EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_Deliveries_ActiveOrder') THEN 1 ELSE 0 END
 ) checks;
 GO
 

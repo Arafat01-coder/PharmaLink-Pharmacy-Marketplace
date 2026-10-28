@@ -3,8 +3,8 @@
 --  Complete database setup script for Microsoft SQL Server
 --
 --  Open this file in SQL Server Management Studio (SSMS) or Azure Data Studio
---  and press Execute.  It creates the database, all ten tables, 10 primary
---  keys, 16 foreign keys, 9 UNIQUE constraints, 20 CHECK constraints, 14
+--  and press Execute.  It creates the database, all twelve tables, 12 primary
+--  keys, 20 foreign keys, 10 UNIQUE constraints, 25 CHECK constraints, 17
 --  supporting indexes and a full set of sample data, so every screen in the
 --  application has something to show the moment the script finishes.
 --
@@ -14,7 +14,7 @@
 --  PharmaLinkDB_Upgrade.sql instead.
 --
 --  Schema at a glance (normalised to third normal form):
---      Users        - all three roles in one table, UserType decides the dashboard
+--      Users        - all four roles in one table, UserType decides the dashboard
 --      Categories   - master medicine category list, owned by the Super Admin
 --      Pharmacies   - one row per pharmacy owner (OwnerId is UNIQUE => 1:1)
 --      Medicines    - the products for sale, owned by exactly one pharmacy
@@ -25,6 +25,9 @@
 --      Offers       - time limited percentage discounts on one medicine
 --      Prescriptions- uploaded prescription photograph for an Rx order (a
 --                     re-upload adds a row; the highest PrescriptionId is current)
+--      Payments     - one row per order: whether it has been paid, the payment
+--                     gateway's transaction reference, refunds and cash collected
+--      Deliveries   - which delivery man carried an order, and how far it got
 -- =============================================================================
 
 
@@ -41,11 +44,19 @@ GO
 USE PharmaLinkDB;
 GO
 
+-- The filtered indexes on Deliveries and Payments need these two settings.
+-- SSMS turns them on by default; sqlcmd does not, so they are set explicitly.
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
 
 -- =============================================================================
 --  STEP 2 - DROP TABLES (children first, so the foreign keys never complain)
 -- =============================================================================
 
+IF OBJECT_ID('dbo.Deliveries',    'U') IS NOT NULL DROP TABLE dbo.Deliveries;
+IF OBJECT_ID('dbo.Payments',      'U') IS NOT NULL DROP TABLE dbo.Payments;
 IF OBJECT_ID('dbo.Prescriptions', 'U') IS NOT NULL DROP TABLE dbo.Prescriptions;
 IF OBJECT_ID('dbo.Reviews',       'U') IS NOT NULL DROP TABLE dbo.Reviews;
 IF OBJECT_ID('dbo.OrderItems',    'U') IS NOT NULL DROP TABLE dbo.OrderItems;
@@ -81,6 +92,8 @@ GO
 --  MustChangePassword = 1 means the account is signed in with a temporary
 --  password the Super Admin issued, so the next login must choose a new one
 --  before any dashboard opens.
+--  A DeliveryMan registers himself and starts Pending, like a pharmacy owner;
+--  the Super Admin activates the account from Manage Users.
 -- -----------------------------------------------------------------------------
 CREATE TABLE Users (
     UserId          INT             IDENTITY(1,1)   NOT NULL,
@@ -105,7 +118,7 @@ CREATE TABLE Users (
     CONSTRAINT PK_Users            PRIMARY KEY (UserId),
     CONSTRAINT UQ_Users_Email       UNIQUE (Email),
     CONSTRAINT UQ_Users_Phone       UNIQUE (Phone),
-    CONSTRAINT CK_Users_Type        CHECK (UserType IN ('SuperAdmin', 'Admin', 'Customer')),
+    CONSTRAINT CK_Users_Type        CHECK (UserType IN ('SuperAdmin', 'Admin', 'Customer', 'DeliveryMan')),
     CONSTRAINT CK_Users_Status      CHECK (Status   IN ('Pending', 'Active', 'Suspended')),
     CONSTRAINT CK_Users_Email       CHECK (Email LIKE '%_@_%._%')
 );
@@ -383,6 +396,79 @@ CREATE TABLE Prescriptions (
 GO
 
 
+-- -----------------------------------------------------------------------------
+--  11. Payments
+--  Exactly one row per order (UQ_Payments_Order), written inside the checkout
+--  transaction.  The payment METHOD stays on Orders, where it always was; this
+--  table records what happened to the money:
+--      Pending   - cash on delivery, not collected yet
+--      Paid      - bKash / Nagad / Visa confirmed by the gateway at checkout,
+--                  or cash handed to the delivery man (CollectedById) or to
+--                  the pharmacy itself (CollectedById NULL)
+--      Refunded  - an online payment on an order that was later cancelled
+--      Cancelled - a cash order cancelled before any cash changed hands
+--  TransactionRef is the gateway's reference and is unique when present.
+--  Only the last four digits of a card are ever stored - never the full card
+--  number, the expiry date or the CVV.
+-- -----------------------------------------------------------------------------
+CREATE TABLE Payments (
+    PaymentId       INT             IDENTITY(1,1)   NOT NULL,
+    OrderId         INT                             NOT NULL,
+    Status          NVARCHAR(15)                    NOT NULL
+        CONSTRAINT DF_Payments_Status   DEFAULT ('Pending'),
+    TransactionRef  NVARCHAR(40)                        NULL,
+    CardLast4       CHAR(4)                             NULL,
+    PaidAt          DATETIME2(0)                        NULL,
+    CollectedById   INT                                 NULL,   -- delivery man who took the cash
+    RefundedAt      DATETIME2(0)                        NULL,
+
+    CONSTRAINT PK_Payments              PRIMARY KEY (PaymentId),
+    CONSTRAINT UQ_Payments_Order        UNIQUE (OrderId),
+    CONSTRAINT FK_Payments_Order        FOREIGN KEY (OrderId)       REFERENCES Orders(OrderId) ON DELETE CASCADE,
+    CONSTRAINT FK_Payments_Collector    FOREIGN KEY (CollectedById) REFERENCES Users(UserId),
+    CONSTRAINT CK_Payments_Status       CHECK (Status IN ('Pending', 'Paid', 'Refunded', 'Cancelled')),
+    CONSTRAINT CK_Payments_PaidAt       CHECK (Status NOT IN ('Paid', 'Refunded') OR PaidAt IS NOT NULL),
+    CONSTRAINT CK_Payments_CardLast4    CHECK (CardLast4 IS NULL OR CardLast4 LIKE '[0-9][0-9][0-9][0-9]')
+);
+GO
+
+
+-- -----------------------------------------------------------------------------
+--  12. Deliveries
+--  A delivery man accepts a Confirmed order from the pool of orders nobody has
+--  taken yet, picks it up from the pharmacy and marks it delivered at the
+--  customer's door, which is what moves Orders.Status to 'Delivered'.
+--      Assigned  - accepted, not collected from the pharmacy yet
+--      PickedUp  - in the delivery man's hands
+--      Delivered - handed to the customer
+--      Released  - the delivery man gave the job back before pickup
+--      Cancelled - the order was cancelled while it was assigned
+--  Released and Cancelled rows are kept as history, so the unique rule "one
+--  delivery man per order" is a filtered index over the live statuses only
+--  (UX_Deliveries_ActiveOrder below): two riders accepting the same order at
+--  the same moment cannot both succeed.
+-- -----------------------------------------------------------------------------
+CREATE TABLE Deliveries (
+    DeliveryId      INT             IDENTITY(1,1)   NOT NULL,
+    OrderId         INT                             NOT NULL,
+    DeliveryManId   INT                             NOT NULL,
+    Status          NVARCHAR(15)                    NOT NULL
+        CONSTRAINT DF_Deliveries_Status   DEFAULT ('Assigned'),
+    AcceptedAt      DATETIME2(0)                    NOT NULL
+        CONSTRAINT DF_Deliveries_Accepted DEFAULT (SYSDATETIME()),
+    PickedUpAt      DATETIME2(0)                        NULL,
+    DeliveredAt     DATETIME2(0)                        NULL,
+    ReleasedAt      DATETIME2(0)                        NULL,
+
+    CONSTRAINT PK_Deliveries                PRIMARY KEY (DeliveryId),
+    CONSTRAINT FK_Deliveries_Order          FOREIGN KEY (OrderId)       REFERENCES Orders(OrderId) ON DELETE CASCADE,
+    CONSTRAINT FK_Deliveries_DeliveryMan    FOREIGN KEY (DeliveryManId) REFERENCES Users(UserId),
+    CONSTRAINT CK_Deliveries_Status         CHECK (Status IN ('Assigned', 'PickedUp', 'Delivered', 'Released', 'Cancelled')),
+    CONSTRAINT CK_Deliveries_DeliveredAt    CHECK (Status <> 'Delivered' OR DeliveredAt IS NOT NULL)
+);
+GO
+
+
 -- =============================================================================
 --  STEP 4 - INDEXES
 --  The columns the application filters and joins on most often.
@@ -406,6 +492,13 @@ CREATE INDEX IX_Reviews_Customer    ON Reviews(CustomerId);
 CREATE INDEX IX_Offers_Medicine     ON Offers(MedicineId);
 CREATE INDEX IX_Prescriptions_Order ON Prescriptions(OrderId);
 CREATE INDEX IX_Pharmacies_Status   ON Pharmacies(Status);
+CREATE INDEX IX_Deliveries_DeliveryMan ON Deliveries(DeliveryManId, Status);
+-- One live delivery per order; Released and Cancelled rows stay as history.
+CREATE UNIQUE INDEX UX_Deliveries_ActiveOrder ON Deliveries(OrderId)
+    WHERE Status IN ('Assigned', 'PickedUp', 'Delivered');
+-- A gateway reference identifies exactly one payment.
+CREATE UNIQUE INDEX UX_Payments_TransactionRef ON Payments(TransactionRef)
+    WHERE TransactionRef IS NOT NULL;
 GO
 
 
@@ -428,6 +521,10 @@ GO
 --   Customer     nusrat@gmail.com               Cust@123
 --   Customer     tanjila@gmail.com              Cust@123
 --   Customer     sabbir@gmail.com               Cust@123
+--   DeliveryMan  arif.rider@gmail.com           Rider@123
+--   DeliveryMan  jamal.rider@gmail.com          Rider@123    (PENDING, waits
+--                                                             for the Super
+--                                                             Admin to activate)
 --  -----------------------------------------------------------------------
 --
 --  PasswordHash is 'PBKDF2$100000$' + Base64( PBKDF2-HMAC-SHA256( password,
@@ -445,7 +542,9 @@ INSERT INTO Users (UserId, FullName, Email, PasswordHash, PasswordSalt, Phone, A
  (6, N'Rahim Uddin',         'rahim@gmail.com',            'PBKDF2$100000$HNEapwmLPeYIxutnAWhK6wTe7+eJRQQYQTtFDMOzE6Q=', 'agpAQtVp1Iuum6bS', '01811000006', N'House 7, Road 3, Mirpur 10, Dhaka','Customer',   'Active'),
  (7, N'Nusrat Jahan',        'nusrat@gmail.com',           'PBKDF2$100000$tPEvP7cYzIgxRAy/5PPpLWY7LvqXlM7nL5H6RVzeEVY=', 'R6AFNwtUC78zTQRG', '01811000007', N'Flat 4B, Green Road, Dhanmondi',   'Customer',   'Active'),
  (8, N'Tanjila Akter',       'tanjila@gmail.com',          'PBKDF2$100000$2uGxffKLms5K8zSymEJzam0IOhbylksiKzGYkLRqiqQ=', 'TZuhvWDIC1n+FTey', '01811000008', N'23 Mohammadpur, Dhaka',            'Customer',   'Active'),
- (9, N'Sabbir Ahmed',        'sabbir@gmail.com',           'PBKDF2$100000$eJD0dDxOaujaeyZAid/zbg/1KIIwXMJluTL5qL1SKdM=', 'LSGBFaTSvTls/bZJ', '01811000009', N'Sector 4, Uttara, Dhaka',          'Customer',   'Active');
+ (9, N'Sabbir Ahmed',        'sabbir@gmail.com',           'PBKDF2$100000$eJD0dDxOaujaeyZAid/zbg/1KIIwXMJluTL5qL1SKdM=', 'LSGBFaTSvTls/bZJ', '01811000009', N'Sector 4, Uttara, Dhaka',          'Customer',   'Active'),
+ (10,N'Arif Hossain',        'arif.rider@gmail.com',       'PBKDF2$100000$dJN2MbERlrPp5dDxq54lkDPiTxyhNkKAYqOgGiBD1+E=', 'VDwoWK89D0yhca/R', '01911000010', N'Mirpur 2, Dhaka',                  'DeliveryMan','Active'),
+ (11,N'Jamal Uddin',         'jamal.rider@gmail.com',      'PBKDF2$100000$/0xT7EewsR3Zz1HwJoF6lS43B+uFTpLJVzhK4QlJdas=', '8WD/cKqorNWKU8Eq', '01911000011', N'Dhanmondi 27, Dhaka',              'DeliveryMan','Pending');
 SET IDENTITY_INSERT Users OFF;
 GO
 
@@ -527,7 +626,9 @@ GO
 --  dashboards, the date range reports and the offers screen always have
 --  something recent to show, whenever the script is run.
 --  Orders 1006 and 1007 are the two halves of one basket that spanned two
---  pharmacies and was therefore split into two orders at checkout.
+--  pharmacies and was therefore split into two orders at checkout.  Each half
+--  chose its own payment: 1006 was paid by bKash, 1007 is cash on delivery and
+--  is still waiting in the delivery pool for a delivery man to accept it.
 -- -----------------------------------------------------------------------------
 INSERT INTO Orders (CustomerId, PharmacyId, OrderDate, ItemsTotal, DeliveryCharge, CommissionAmount, DeliveryAddress, PaymentMethod, Status) VALUES
  (6, 1, DATEADD(DAY, -21, SYSDATETIME()),  182.00, 60.00,  14.56, N'House 7, Road 3, Mirpur 10, Dhaka',  'bKash',          'Delivered'),   -- 1001
@@ -536,7 +637,7 @@ INSERT INTO Orders (CustomerId, PharmacyId, OrderDate, ItemsTotal, DeliveryCharg
  (8, 2, DATEADD(DAY,  -9, SYSDATETIME()),  190.00, 60.00,  19.00, N'23 Mohammadpur, Dhaka',              'Nagad',          'Delivered'),   -- 1004
  (9, 3, DATEADD(DAY,  -4, SYSDATETIME()),  960.00, 60.00,  76.80, N'Sector 4, Uttara, Dhaka',            'bKash',          'Placed'),      -- 1005 (waits on Rx)
  (6, 1, DATEADD(DAY,  -2, SYSDATETIME()),   72.00, 60.00,   5.76, N'House 7, Road 3, Mirpur 10, Dhaka',  'bKash',          'Confirmed'),   -- 1006
- (6, 3, DATEADD(DAY,  -2, SYSDATETIME()),   57.50, 60.00,   4.60, N'House 7, Road 3, Mirpur 10, Dhaka',  'bKash',          'Confirmed');   -- 1007
+ (6, 3, DATEADD(DAY,  -2, SYSDATETIME()),   57.50, 60.00,   4.60, N'House 7, Road 3, Mirpur 10, Dhaka',  'CashOnDelivery', 'Confirmed');   -- 1007
 GO
 
 INSERT INTO OrderItems (OrderId, MedicineId, Quantity, UnitPrice) VALUES
@@ -604,6 +705,55 @@ GO
 
 
 -- -----------------------------------------------------------------------------
+--  Payments, one per order.  Every online order was confirmed by the gateway a
+--  minute after it was placed.  Order 1002 was cash on delivery and Arif
+--  (user 10) collected the cash at the door; order 1007 is cash on delivery
+--  that nobody has collected yet.  The Visa card on order 1003 is stored as
+--  its last four digits only.
+-- -----------------------------------------------------------------------------
+INSERT INTO Payments (OrderId, Status, TransactionRef, CardLast4, PaidAt, CollectedById)
+SELECT  o.OrderId, v.Status, v.TransactionRef, v.CardLast4,
+        CASE WHEN v.Status = 'Paid' THEN DATEADD(MINUTE, v.PaidAfterMinutes, o.OrderDate) END,
+        v.CollectedById
+FROM    Orders o
+        INNER JOIN (VALUES
+            (1001, 'Paid',    'BK260001A7Q2', NULL,   1,    NULL),
+            (1002, 'Paid',    NULL,           NULL,   2880, 10),     -- cash, collected on delivery
+            (1003, 'Paid',    'VS260003K8M1', '4242', 1,    NULL),
+            (1004, 'Paid',    'NG260004P3D9', NULL,   1,    NULL),
+            (1005, 'Paid',    'BK260005T6W4', NULL,   1,    NULL),
+            (1006, 'Paid',    'BK260006H2R8', NULL,   1,    NULL),
+            (1007, 'Pending', NULL,           NULL,   0,    NULL)      -- cash, not collected yet
+        ) v (OrderId, Status, TransactionRef, CardLast4, PaidAfterMinutes, CollectedById)
+            ON v.OrderId = o.OrderId;
+GO
+
+
+-- -----------------------------------------------------------------------------
+--  Deliveries.  Arif (user 10) delivered the four old orders and is carrying
+--  order 1006 right now.  Order 1007 is Confirmed with no delivery row, so it
+--  is the one waiting in the pool on the delivery man's "Available" tab.
+--  Order 1005 is still Placed (its prescription is pending), so it is not
+--  offered to anyone yet.
+-- -----------------------------------------------------------------------------
+INSERT INTO Deliveries (OrderId, DeliveryManId, Status, AcceptedAt, PickedUpAt, DeliveredAt)
+SELECT  o.OrderId, 10, v.Status,
+        DATEADD(MINUTE, 30, o.OrderDate),
+        DATEADD(MINUTE, 50, o.OrderDate),
+        CASE WHEN v.Status = 'Delivered' THEN DATEADD(MINUTE, v.DeliveredAfterMinutes, o.OrderDate) END
+FROM    Orders o
+        INNER JOIN (VALUES
+            (1001, 'Delivered', 95),
+            (1002, 'Delivered', 2880),
+            (1003, 'Delivered', 140),
+            (1004, 'Delivered', 2900),
+            (1006, 'PickedUp',  0)
+        ) v (OrderId, Status, DeliveredAfterMinutes)
+            ON v.OrderId = o.OrderId;
+GO
+
+
+-- -----------------------------------------------------------------------------
 --  Two live cart lines for Rahim Uddin (customer 6), spanning two pharmacies,
 --  so the Cart screen demonstrates the "one order per pharmacy" split without
 --  anyone having to add items first.
@@ -628,7 +778,9 @@ UNION ALL SELECT 'Orders',        COUNT(*) FROM Orders
 UNION ALL SELECT 'OrderItems',    COUNT(*) FROM OrderItems
 UNION ALL SELECT 'Reviews',       COUNT(*) FROM Reviews
 UNION ALL SELECT 'Offers',        COUNT(*) FROM Offers
-UNION ALL SELECT 'Prescriptions', COUNT(*) FROM Prescriptions;
+UNION ALL SELECT 'Prescriptions', COUNT(*) FROM Prescriptions
+UNION ALL SELECT 'Payments',      COUNT(*) FROM Payments
+UNION ALL SELECT 'Deliveries',    COUNT(*) FROM Deliveries;
 GO
 
 -- The pharmacies the Super Admin should see on the low rated report.

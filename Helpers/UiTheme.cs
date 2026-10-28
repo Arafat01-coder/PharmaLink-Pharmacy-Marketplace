@@ -228,7 +228,7 @@ namespace PharmaLinkApp.Helpers
             button.Cursor = button.Enabled ? Cursors.Hand : Cursors.Default;
         }
 
-        /// <summary>A left menu button, used on all three dashboards.</summary>
+        /// <summary>A left menu button, used on all four dashboards.</summary>
         public static void StyleSidebarButton(Button button)
         {
             button.FlatStyle = FlatStyle.Flat;

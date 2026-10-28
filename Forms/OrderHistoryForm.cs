@@ -155,8 +155,12 @@ namespace PharmaLinkApp.Forms
                         dgvOrders.Columns["DeliveryCharge"].HeaderText = "Delivery";
                         dgvOrders.Columns["TotalAmount"].HeaderText = "Paid (Tk)";
                         dgvOrders.Columns["PaymentMethod"].HeaderText = "Method";
+                        dgvOrders.Columns["PaymentStatus"].HeaderText = "Payment";
                         dgvOrders.Columns["Status"].HeaderText = "Status";
+                        dgvOrders.Columns["Delivery"].HeaderText = "Delivery";
                         dgvOrders.Columns["RxState"].HeaderText = "Prescription";
+                        // Already inside Paid (Tk); the column gives its width to Delivery.
+                        dgvOrders.Columns["DeliveryCharge"].Visible = false;
                         dgvOrders.Columns["RejectReason"].Visible = false;
                         dgvOrders.Columns["CanReview"].Visible = false;
 
@@ -165,10 +169,11 @@ namespace PharmaLinkApp.Forms
                         UiTheme.SizeColumn(dgvOrders, "PharmacyName", 100, 130);
                         UiTheme.SizeColumn(dgvOrders, "Items", 30, 45);
                         UiTheme.SizeColumn(dgvOrders, "ItemsTotal", 50, 75);
-                        UiTheme.SizeColumn(dgvOrders, "DeliveryCharge", 45, 65);
                         UiTheme.SizeColumn(dgvOrders, "TotalAmount", 50, 75);
                         UiTheme.SizeColumn(dgvOrders, "PaymentMethod", 60, 90);
+                        UiTheme.SizeColumn(dgvOrders, "PaymentStatus", 50, 70);
                         UiTheme.SizeColumn(dgvOrders, "Status", 50, 75);
+                        UiTheme.SizeColumn(dgvOrders, "Delivery", 120, 150);
                         UiTheme.SizeColumn(dgvOrders, "RxState", 60, 90);
                     }
 
@@ -421,7 +426,8 @@ namespace PharmaLinkApp.Forms
             if (orderId == 0) return;
 
             DialogResult answer = MessageBox.Show(
-                "Cancel order #" + orderId + "?\r\n\r\nThis cannot be undone.",
+                "Cancel order #" + orderId + "?\r\n\r\nThis cannot be undone. If you paid by bKash, Nagad " +
+                "or Visa card, the payment is refunded.",
                 "Cancel order", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
             if (answer != DialogResult.Yes) return;

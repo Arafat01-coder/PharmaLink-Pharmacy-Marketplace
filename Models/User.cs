@@ -13,7 +13,7 @@ namespace PharmaLinkApp.Models
         public string PasswordSalt { get; set; } = "";
         public string Phone { get; set; } = "";
         public string Address { get; set; } = "";
-        public string UserType { get; set; } = "";      // SuperAdmin | Admin | Customer
+        public string UserType { get; set; } = "";      // SuperAdmin | Admin | Customer | DeliveryMan
         public string Status { get; set; } = "";        // Pending | Active | Suspended
         public DateTime CreatedAt { get; set; }
 

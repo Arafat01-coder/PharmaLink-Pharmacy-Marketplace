@@ -22,6 +22,13 @@ namespace PharmaLinkApp.Forms
     /// and after every attempt, never cached from when the form opened: prices,
     /// offers and stock can change while the customer is paying for the first
     /// half of a split basket.
+    ///
+    /// bKash, Nagad and Visa card are paid before the order is written:
+    /// Confirm opens PaymentGatewayForm for exactly the amount on screen, and
+    /// only an approved payment goes on to OrderService.Checkout, which records
+    /// it in the same transaction as the order. Closing the payment window
+    /// places nothing and charges nothing. Cash on delivery skips that step and
+    /// is recorded as Pending until the delivery man collects it.
     /// </summary>
     public partial class CheckoutForm : Form
     {
@@ -63,7 +70,7 @@ namespace PharmaLinkApp.Forms
                 "Cash on delivery",
                 "bKash",
                 "Nagad",
-                "Card"
+                "Visa card"
             });
             cmbPayment.SelectedIndex = 0;
 
@@ -138,7 +145,9 @@ namespace PharmaLinkApp.Forms
             UiTheme.StyleGrid(dgvReview);
 
             lblHint.Text =
-                "Check the delivery address and the items on the right, then press Confirm order." + Environment.NewLine +
+                "Check the delivery address and the items on the right, then press Confirm order. " +
+                "bKash, Nagad and Visa card are paid in the next window; cash is paid to the delivery man at your door." +
+                Environment.NewLine +
                 "If your cart has items from more than one pharmacy, each pharmacy is a separate order with its own " +
                 "delivery charge and invoice." + Environment.NewLine +
                 "Stock and prices are checked again when you confirm. If anything has changed, nothing is charged " +
@@ -276,6 +285,9 @@ namespace PharmaLinkApp.Forms
         private bool NeedsMobileNumber =>
             cmbPayment.SelectedIndex == 2 || cmbPayment.SelectedIndex == 3;   // bKash or Nagad
 
+        /// <summary>bKash, Nagad or Visa card: paid through the gateway before the order is placed.</summary>
+        private bool IsOnlinePayment => cmbPayment.SelectedIndex >= 2;
+
         /// <summary>
         /// False until the customer has picked from the payment list, so a
         /// freshly opened checkout does not greet them with a red error.
@@ -294,6 +306,8 @@ namespace PharmaLinkApp.Forms
 
             if (NeedsMobileNumber)
                 lblMobile.Text = cmbPayment.SelectedItem.ToString() + " number (11 digits)";
+
+            btnConfirm.Text = IsOnlinePayment ? "Pay and confirm order" : "Confirm order";
 
             ValidateAll();
         }
@@ -387,6 +401,19 @@ namespace PharmaLinkApp.Forms
         {
             if (_placing || !ValidateAll()) return;
 
+            // Online payment first. Nothing is written until it is approved.
+            PaymentAuthorization payment = null;
+            if (IsOnlinePayment)
+            {
+                payment = TakeOnlinePayment();
+                if (payment == null)
+                {
+                    lblStatus.ForeColor = UiTheme.Warning;
+                    lblStatus.Text = "Payment not completed. Nothing was charged and no order was placed.";
+                    return;
+                }
+            }
+
             // Confirm, Cancel and Upload stay disabled until the attempt is
             // over, so a double click cannot place the same order twice.
             _placing = true;
@@ -402,7 +429,7 @@ namespace PharmaLinkApp.Forms
                 orderId = _orders.Checkout(UserSession.UserId, CurrentPharmacyId,
                                            txtAddress.Text.Trim(), PaymentMethodForDatabase(),
                                            NeedsMobileNumber ? txtMobile.Text.Trim() : null,
-                                           DeliveryCharge,
+                                           DeliveryCharge, payment,
                                            lblRxWarning.Visible ? _pendingRxImagePath : null,
                                            _pendingRxDoctorName, out message);
             }
@@ -435,6 +462,36 @@ namespace PharmaLinkApp.Forms
             }
 
             MoveToNextPharmacyOrFinish();
+        }
+
+        /// <summary>
+        /// Opens the payment window for this pharmacy's order, for the payable
+        /// amount just re-read from the database. Returns the approval, or null
+        /// when the customer closed the window without paying.
+        /// </summary>
+        private PaymentAuthorization TakeOnlinePayment()
+        {
+            decimal payable;
+            try
+            {
+                // Re-read so the gateway is asked for today's real total.
+                if (!ReloadGroups()) return null;
+                ShowCurrentPharmacy();
+                payable = Convert.ToDecimal(CurrentGroup["ItemsTotal"]) + DeliveryCharge;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Your basket could not be checked before payment.\r\n\r\n" + DbHelper.Describe(ex),
+                    "PharmaLink", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+
+            using (PaymentGatewayForm gateway = new PaymentGatewayForm(
+                       PaymentMethodForDatabase(), NeedsMobileNumber ? txtMobile.Text.Trim() : "",
+                       payable, CurrentPharmacyName))
+            {
+                return gateway.ShowDialog(this) == DialogResult.OK ? gateway.Authorization : null;
+            }
         }
 
         /// <summary>After a refused order: show today's real basket, keeping what the customer typed.</summary>

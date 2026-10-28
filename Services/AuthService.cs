@@ -349,6 +349,31 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
         }
 
         /// <summary>
+        /// Registers a delivery man. He is created Pending, like a pharmacy
+        /// owner: a delivery man handles customers' medicine and cash, so the
+        /// Super Admin activates the account from Manage Users after checking
+        /// who he is. Until then the login form tells him he is waiting.
+        /// </summary>
+        public int RegisterDeliveryMan(User user, string password)
+        {
+            string salt = PasswordHelper.CreateSalt();
+            string hash = PasswordHelper.Hash(password, salt);
+
+            const string sql = @"
+INSERT INTO Users (FullName, Email, PasswordHash, PasswordSalt, Phone, Address, UserType, Status)
+VALUES (@FullName, @Email, @Hash, @Salt, @Phone, @Address, 'DeliveryMan', 'Pending');
+SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
+            return _db.ExecuteScalarInt(sql,
+                DbHelper.P("@FullName", user.FullName.Trim()),
+                DbHelper.P("@Email", user.Email.Trim()),
+                DbHelper.P("@Hash", hash),
+                DbHelper.P("@Salt", salt),
+                DbHelper.P("@Phone", user.Phone.Trim()),
+                DbHelper.P("@Address", user.Address));
+        }
+
+        /// <summary>
         /// Registers a pharmacy owner. The Users row and the Pharmacies row are
         /// written inside one transaction, both with Status 'Pending', so the
         /// application can never end up with an owner who has no shop or a shop
@@ -561,7 +586,7 @@ UPDATE  Users
 SET     PasswordResetRequestedAt = ISNULL(PasswordResetRequestedAt, SYSDATETIME())
 WHERE   Email = @Email
   AND   Phone = @Phone
-  AND   UserType IN ('Admin', 'Customer')
+  AND   UserType IN ('Admin', 'Customer', 'DeliveryMan')
   AND   Status   IN ('Active', 'Suspended');";
 
             _db.ExecuteNonQuery(sql,
@@ -578,7 +603,7 @@ WHERE   Email = @Email
         {
             return _db.ExecuteScalarInt(@"
 SELECT COUNT(*) FROM Users
-WHERE  PasswordResetRequestedAt IS NOT NULL AND UserType IN ('Admin', 'Customer');");
+WHERE  PasswordResetRequestedAt IS NOT NULL AND UserType IN ('Admin', 'Customer', 'DeliveryMan');");
         }
 
         /// <summary>
@@ -616,7 +641,7 @@ SET     PasswordHash             = @Hash,
         FailedLoginCount         = 0,
         LockoutUntil             = NULL
 WHERE   UserId = @UserId
-  AND   UserType IN ('Admin', 'Customer');";
+  AND   UserType IN ('Admin', 'Customer', 'DeliveryMan');";
 
             int changed = _db.ExecuteNonQuery(sql,
                 DbHelper.P("@Hash", hash),
@@ -716,7 +741,7 @@ ORDER BY CASE WHEN u.PasswordResetRequestedAt IS NULL THEN 1 ELSE 0 END,
         }
 
         /// <summary>
-        /// Suspends or activates an Admin or Customer account. Returns true when
+        /// Suspends or activates an Admin, Customer or DeliveryMan account. Returns true when
         /// something changed; message always says what happened (or why not).
         ///
         /// For a pharmacy owner the account and the shop must not disagree, so
@@ -729,6 +754,12 @@ ORDER BY CASE WHEN u.PasswordResetRequestedAt IS NULL THEN 1 ELSE 0 END,
         ///    Manage Pharmacies, not an account switch.
         /// Medicines are never touched: customers only see medicines of an
         /// Approved pharmacy, so the shop status alone hides or shows them.
+        ///
+        /// Suspending a delivery man gives back every job he has accepted but
+        /// not yet collected, so those orders return to the pool for someone
+        /// else. It is refused while he is carrying an order: a suspended
+        /// account cannot sign in to mark it delivered, and the pharmacy can
+        /// neither deliver nor cancel an order that has left the shop.
         /// </summary>
         public bool SetUserStatus(int userId, string newStatus, out string message)
         {
@@ -744,7 +775,8 @@ SET XACT_ABORT ON;
 
 DECLARE @UserType NVARCHAR(15), @OldStatus NVARCHAR(15),
         @PharmacyId INT, @PharmacyStatus NVARCHAR(15),
-        @Outcome NVARCHAR(30) = 'NoChange', @UsersChanged INT = 0, @PharmacyChanged INT = 0;
+        @Outcome NVARCHAR(30) = 'NoChange', @UsersChanged INT = 0, @PharmacyChanged INT = 0,
+        @DeliveriesReleased INT = 0, @DeliveriesInHand INT = 0;
 
 BEGIN TRY
     BEGIN TRANSACTION;
@@ -757,8 +789,14 @@ BEGIN TRY
     FROM    Pharmacies p WITH (UPDLOCK, HOLDLOCK)
     WHERE   p.OwnerId = @UserId;
 
+    SELECT  @DeliveriesInHand = COUNT(*)
+    FROM    Deliveries d WITH (UPDLOCK, HOLDLOCK)
+    WHERE   d.DeliveryManId = @UserId AND d.Status = 'PickedUp';
+
     IF @UserType IS NULL OR @UserType = 'SuperAdmin'
         SET @Outcome = 'NotFound';
+    ELSE IF @UserType = 'DeliveryMan' AND @NewStatus = 'Suspended' AND @DeliveriesInHand > 0
+        SET @Outcome = 'DeliveriesInHand';
     ELSE IF @UserType = 'Admin' AND @NewStatus = 'Active'
             AND (@PharmacyId IS NULL OR @PharmacyStatus IN ('Pending', 'Rejected'))
         SET @Outcome = 'PharmacyNotApproved';
@@ -777,8 +815,14 @@ BEGIN TRY
             UPDATE Pharmacies SET Status = 'Approved' WHERE PharmacyId = @PharmacyId AND Status = 'Suspended';
             SET @PharmacyChanged = @@ROWCOUNT;
         END
+        ELSE IF @UserType = 'DeliveryMan' AND @NewStatus = 'Suspended'
+        BEGIN
+            UPDATE Deliveries SET Status = 'Released', ReleasedAt = SYSDATETIME()
+            WHERE  DeliveryManId = @UserId AND Status = 'Assigned';
+            SET @DeliveriesReleased = @@ROWCOUNT;
+        END
 
-        IF @UsersChanged + @PharmacyChanged > 0 SET @Outcome = 'Changed';
+        IF @UsersChanged + @PharmacyChanged + @DeliveriesReleased > 0 SET @Outcome = 'Changed';
     END
 
     COMMIT TRANSACTION;
@@ -789,7 +833,8 @@ BEGIN CATCH
 END CATCH;
 
 SELECT @Outcome AS Outcome, @UserType AS UserType, @OldStatus AS OldStatus,
-       @PharmacyStatus AS PharmacyStatus, @PharmacyChanged AS PharmacyChanged;";
+       @PharmacyStatus AS PharmacyStatus, @PharmacyChanged AS PharmacyChanged,
+       @DeliveriesReleased AS DeliveriesReleased, @DeliveriesInHand AS DeliveriesInHand;";
 
             DataTable table = _db.ExecuteTable(sql,
                 DbHelper.P("@UserId", userId),
@@ -799,6 +844,7 @@ SELECT @Outcome AS Outcome, @UserType AS UserType, @OldStatus AS OldStatus,
             string outcome = DbHelper.GetString(row, "Outcome");
             string pharmacyStatus = DbHelper.GetString(row, "PharmacyStatus");
             bool pharmacyChanged = DbHelper.GetInt(row, "PharmacyChanged") > 0;
+            int deliveriesReleased = DbHelper.GetInt(row, "DeliveriesReleased");
 
             switch (outcome)
             {
@@ -806,6 +852,12 @@ SELECT @Outcome AS Outcome, @UserType AS UserType, @OldStatus AS OldStatus,
                     message = DbHelper.GetString(row, "UserType") == "SuperAdmin"
                         ? "The Super Admin account cannot be suspended or activated here."
                         : "That account no longer exists.";
+                    return false;
+
+                case "DeliveriesInHand":
+                    message = "This delivery man is carrying " + DbHelper.GetInt(row, "DeliveriesInHand") +
+                              " order(s) right now. Suspend him once he has delivered them; until then he could " +
+                              "not sign in to finish them.";
                     return false;
 
                 case "PharmacyNotApproved":
@@ -819,7 +871,10 @@ SELECT @Outcome AS Outcome, @UserType AS UserType, @OldStatus AS OldStatus,
                     if (newStatus == "Suspended")
                         message = pharmacyChanged
                             ? "The account and its pharmacy are now Suspended. The shop is hidden from customers."
-                            : "The account is now Suspended.";
+                            : deliveriesReleased > 0
+                                ? "The account is now Suspended. " + deliveriesReleased +
+                                  " order(s) he had accepted but not collected are back in the delivery pool."
+                                : "The account is now Suspended.";
                     else
                         message = pharmacyChanged
                             ? "The account is now Active and its pharmacy has been reinstated."

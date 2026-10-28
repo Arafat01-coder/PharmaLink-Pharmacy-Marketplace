@@ -9,12 +9,15 @@ using PharmaLinkApp.Services;
 namespace PharmaLinkApp.Forms
 {
     /// <summary>
-    /// Registration for both kinds of account (requirements 10 and 19).
+    /// Registration for the three kinds of account anyone can create
+    /// (requirements 10 and 19, and the delivery man).
     ///
-    /// The "Register as" dropdown decides which of the two paths runs. A
-    /// customer is created Active and can order immediately; a pharmacy owner
-    /// is created Pending together with a Pending Pharmacies row, and neither
-    /// becomes usable until the Super Admin has checked the drug licence.
+    /// The "Register as" dropdown decides which path runs. A customer is
+    /// created Active and can order immediately; a pharmacy owner is created
+    /// Pending together with a Pending Pharmacies row, and neither becomes
+    /// usable until the Super Admin has checked the drug licence. A delivery
+    /// man fills in only the personal fields and is created Pending until the
+    /// Super Admin activates him from Manage Users.
     /// </summary>
     public partial class SignUpForm : Form
     {
@@ -31,6 +34,7 @@ namespace PharmaLinkApp.Forms
         public string RegisteredEmail { get; private set; } = "";
 
         private bool IsPharmacyOwner => cmbRegisterAs.SelectedIndex == 1;
+        private bool IsDeliveryMan => cmbRegisterAs.SelectedIndex == 2;
 
         public SignUpForm()
         {
@@ -43,6 +47,7 @@ namespace PharmaLinkApp.Forms
 
             cmbRegisterAs.Items.Add("Customer  (patient buying medicine)");
             cmbRegisterAs.Items.Add("Pharmacy Owner  (shop selling medicine)");
+            cmbRegisterAs.Items.Add("Delivery Man  (delivering orders)");
             cmbRegisterAs.SelectedIndex = 0;
 
             LoadAreaSuggestions();
@@ -117,8 +122,10 @@ namespace PharmaLinkApp.Forms
         {
             grpPharmacy.Enabled = IsPharmacyOwner;
             grpPharmacy.ForeColor = IsPharmacyOwner ? UiTheme.Primary : UiTheme.TextMuted;
-            lblAddress.Text = IsPharmacyOwner ? "Your personal address" : "Delivery address";
-            btnCreate.Text = IsPharmacyOwner ? "Submit for approval" : "Create account";
+            lblAddress.Text = IsPharmacyOwner ? "Your personal address"
+                            : IsDeliveryMan ? "Your home address"
+                            : "Delivery address";
+            btnCreate.Text = IsPharmacyOwner || IsDeliveryMan ? "Submit for approval" : "Create account";
             lblFormMessage.Visible = false;
             ValidateAll();
         }
@@ -324,6 +331,18 @@ namespace PharmaLinkApp.Forms
                         "Both your account and " + pharmacy.PharmacyName.Trim() + " are held at status Pending. " +
                         "The Super Admin will check licence " + pharmacy.LicenseNo.Trim() + " and approve the shop, " +
                         "after which you will be able to log in and list your medicines.",
+                        "Submitted for approval", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else if (IsDeliveryMan)
+                {
+                    // Like a pharmacy owner, he cannot sign in yet, so the login
+                    // form is not pre-filled with his email.
+                    _auth.RegisterDeliveryMan(user, txtPassword.Text);
+
+                    MessageBox.Show(
+                        "Thank you for registering as a delivery man, " + user.FullName.Trim() + ".\r\n\r\n" +
+                        "Your account is held at status Pending. Once the Super Admin has checked your details " +
+                        "and activated it, you can sign in and start accepting deliveries.",
                         "Submitted for approval", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else

@@ -10,9 +10,9 @@ namespace PharmaLinkApp.Forms
     /// <summary>
     /// The single entry point of the application.
     ///
-    /// There is no separate administrator login. All three roles type their
+    /// There is no separate administrator login. All four roles type their
     /// email and password into this one form; the login query returns the
-    /// UserType and that single value decides which of the three dashboards
+    /// UserType and that single value decides which of the four dashboards
     /// opens. No arrow in the navigation diagram ever crosses from one role
     /// branch into another.
     ///
@@ -298,7 +298,7 @@ namespace PharmaLinkApp.Forms
 
         /// <summary>
         /// The single decision node of the whole navigation diagram.
-        /// One value, three destinations, and nothing else in the application
+        /// One value, four destinations, and nothing else in the application
         /// ever has to ask again who the user is.
         /// </summary>
         private void OpenDashboardFor(string userType)
@@ -315,6 +315,9 @@ namespace PharmaLinkApp.Forms
                     break;
                 case "Customer":
                     dashboard = new CustomerHomeForm();
+                    break;
+                case "DeliveryMan":
+                    dashboard = new DeliveryDashboard();
                     break;
                 default:
                     UserSession.Clear();

@@ -33,6 +33,40 @@ Supervised by **Dr. Md. Iftekharul Mobin**
 
 ---
 
+## What's New: Delivery Men and Online Payments
+
+Added for the Software Engineering course (Fall 2026–27) as **increment 4** of the incremental process model in the [project proposal](docs/se-proposal/PharmaLink_Project_Proposal.docx). The sections further down describe the OOP2 version; this section lists what changed.
+
+**A fourth role: the Delivery Man.** He registers from Sign Up (*Register as: Delivery Man*), starts **Pending**, and the Super Admin activates him from **Manage Users**. His dashboard has three views:
+
+| View | What he does |
+|------|--------------|
+| Available Orders | Every **Confirmed** order that no delivery man has taken, with the pharmacy to pick up from, the address to deliver to and the cash to collect. **Accept order** makes it his. |
+| My Deliveries | **Picked up** when he leaves the pharmacy with it, **Delivered** at the customer's door, or **Give back** (before pickup only) to return it to the pool. |
+| Delivery History | Finished jobs between two dates, with the cash he collected and the delivery fees he earned. |
+
+The rules, each enforced in the SQL as well as on the buttons:
+
+- Only one delivery man can hold an order. A filtered unique index (`UX_Deliveries_ActiveOrder`) settles two riders pressing **Accept** at the same moment.
+- Once a delivery man has accepted an order, the pharmacy can no longer **Mark delivered** it. Once he has picked it up, the pharmacy can no longer **Cancel** it.
+- **Delivered** moves the order to `Delivered` and, for cash on delivery, marks the payment `Paid` with him as the collector, all in one transaction.
+- Suspending a delivery man returns his not-yet-collected jobs to the pool, and is refused while he is carrying an order.
+- The pharmacy, the customer's **My Orders** and the invoice all show who is delivering and how far it has got.
+
+**Online payment: bKash, Nagad and Visa card, plus cash on delivery.** Choosing an online method at checkout opens a payment window *before* the order is written:
+
+- **bKash / Nagad:** account number, a six digit verification code, then the PIN (5 digits for bKash, 4 for Nagad).
+- **Visa card:** card number (Visa and Luhn checked), name on card, expiry `MM/YY`, CVV. Only the **last four digits** are ever stored.
+- An approved payment is recorded in a new `Payments` table in the **same transaction** as the order, with the gateway's transaction reference. If the total changed while the customer was paying, the order is refused and nothing is charged.
+- Cash on delivery is `Pending` until the delivery man (or the pharmacy) collects it.
+- Cancelling an order **refunds** an online payment, or marks an uncollected cash payment `Cancelled`.
+
+> **Sandbox, not real money.** Connecting to the live bKash, Nagad or card networks needs a merchant account and API keys. The checkout therefore talks to an `IPaymentGateway` interface (`Services/PaymentGateway.cs`) and ships with `SandboxPaymentGateway`, which runs the same steps and checks without moving money. The verification code is shown on screen instead of sent by SMS. Any PIN of the right length works except all zeros, and the Visa test card `4242 4242 4242 4242` is approved while `4000 0000 0000 0002` is always declined. A real provider can be added as another class implementing that interface.
+
+**Database:** two new tables, `Payments` (one row per order) and `Deliveries` (who carried it), plus `'DeliveryMan'` in `CK_Users_Type`. Run `PharmaLinkDB_Setup.sql` for a fresh database, or `PharmaLinkDB_Upgrade.sql` (steps 9–11) to add them to an existing one. The upgrade back-fills a payment row for every existing order.
+
+---
+
 ## Table of Contents
 
 1. [Introduction](#1-introduction)
@@ -1318,13 +1352,15 @@ PharmaLink-Pharmacy-Marketplace/
 │   ├── CategoryService.cs        # master category CRUD
 │   ├── MedicineService.cs        # catalogue search + owner CRUD + stock
 │   ├── CartService.cs            # MERGE add, quantity, per pharmacy grouping
-│   ├── OrderService.cs           # the transactional checkout, history, status
+│   ├── OrderService.cs           # the transactional checkout, history, status, refunds
+│   ├── DeliveryService.cs        # delivery pool, accept, pick up, deliver, history
+│   ├── PaymentGateway.cs         # IPaymentGateway + the sandbox bKash / Nagad / Visa gateway
 │   ├── ReviewService.cs          # verified reviews and moderation
 │   ├── OfferService.cs           # time limited discounts
 │   ├── PrescriptionService.cs    # image upload and verification
 │   └── ReportService.cs          # earnings, low rated, revenue by area, CSV
 │
-└── Forms/                        # 30 forms, each with its .Designer.cs
+└── Forms/                        # 32 forms, each with its .Designer.cs
     ├── LoginForm / SignUpForm / ForgotPasswordForm
     │   ChangePasswordRequiredForm                               (shared entry)
     ├── SuperAdminDashboard / SuperAdminManageShopsForm
@@ -1338,7 +1374,8 @@ PharmaLink-Pharmacy-Marketplace/
     └── CustomerHomeForm / MedicineDetailsForm / CartForm
         CheckoutForm / InvoiceForm / UploadPrescriptionForm
         OrderHistoryForm / GiveRatingForm / CustomerOffersForm
-        MyProfileForm                                            (Customer)
+        PaymentGatewayForm / MyProfileForm                       (Customer)
+    └── DeliveryDashboard                                        (Delivery Man)
 ```
 
 **Why the layers are split this way.** `Forms` never contains SQL; it calls a service. `Services` never contains a `MessageBox`; it returns data or a boolean plus a message. `DbHelper` is the only class that knows the connection string. That separation is what makes the data isolation rule checkable: to prove that a pharmacy owner cannot read another shop's data you only have to read `MedicineService`, `OrderService` and `ReportService`, not thirty forms' worth of button click handlers.
@@ -1359,10 +1396,10 @@ PharmaLink-Pharmacy-Marketplace/
 Open **`PharmaLinkDB_Setup.sql`** in SQL Server Management Studio and press **Execute**. The script:
 
 1. creates the `PharmaLinkDB` database,
-2. drops the ten tables in foreign key order so it is safe to re-run,
-3. creates all ten tables with every primary key, foreign key, `UNIQUE` and `CHECK` constraint,
+2. drops the twelve tables in foreign key order so it is safe to re-run,
+3. creates all twelve tables with every primary key, foreign key, `UNIQUE` and `CHECK` constraint,
 4. creates the supporting indexes,
-5. inserts sample data — 1 Super Admin, 4 pharmacy owners, 4 customers, 10 categories, 24 medicines, 7 orders with 11 line items, 7 reviews, 4 offers, 2 prescriptions (one approved on a delivered order, one waiting for verification) and a 2 line cart,
+5. inserts sample data — 1 Super Admin, 4 pharmacy owners, 4 customers, 2 delivery men, 10 categories, 24 medicines, 7 orders with 11 line items, 7 payments, 5 deliveries, 7 reviews, 4 offers, 3 prescriptions and a 2 line cart,
 6. prints a row count per table so you can see it worked.
 
 > **Already have a `PharmaLinkDB` from an earlier version of this project?** Running the setup script again drops and recreates every table, which deletes any orders you placed yourself. To keep your data, run **`PharmaLinkDB_Upgrade.sql`** instead: it adds the new columns (login lockout, payment wallet number, review reports, prescription reject reason), the `'Rejected'` pharmacy status and the new indexes in place, and is safe to run more than once. Take a backup first if the data matters to you. The application will not sign anyone in against an old database until one of the two scripts has been run.
@@ -1442,6 +1479,8 @@ All of these are created by `PharmaLinkDB_Setup.sql` with a real salted PBKDF2 h
 | Customer | `nusrat@gmail.com` | `Cust@123` | |
 | Customer | `tanjila@gmail.com` | `Cust@123` | |
 | Customer | `sabbir@gmail.com` | `Cust@123` | Has the order with the pending prescription |
+| Delivery Man | `arif.rider@gmail.com` | `Rider@123` | Carrying order 1006; order 1007 (cash on delivery) is waiting in the pool |
+| Delivery Man | `jamal.rider@gmail.com` | `Rider@123` | **Pending** — activate him from Manage Users first |
 
 ### A five minute demonstration path
 
@@ -1450,6 +1489,7 @@ All of these are created by `PharmaLinkDB_Setup.sql` with a real salted PBKDF2 h
 3. Open **My Orders**, reopen an invoice, and use **Rate and review** on a delivered order.
 4. Log out and log in as **`kamrul@mitfordpharma.com`**. The dashboard shows the order that just arrived and a low stock alert. Open **My Medicines**, try to save a medicine with a negative price, and read the error that names the `CHECK` constraint.
 5. Log out and log in as **`admin@pharmalink.com.bd`**. Approve **New Life Pharmacy**, open **Low Rated Pharmacies** to see Dhanmondi Medico, then **Moderate Reviews** and hide the one star insult.
+6. Log in as **`arif.rider@gmail.com`**. **My Deliveries** shows order 1006 on its way: press **Delivered**. Open **Available Orders**, accept order 1007, press **Picked up**, then **Delivered**, and confirm the Tk 117.50 cash. The *Cash collected today* tile updates, and Rahim's invoice for 1007 now reads *PAID in cash on delivery*.
 
 ---
 
@@ -1527,10 +1567,10 @@ What the group takes away is that **the design decides how hard the coding will 
 
 ### Future Work
 
-- A **delivery rider role** with live order tracking.
+- **Live map tracking** for the delivery man role (the role itself is now built; see *What's New*).
 - **SMS notification** when an order status changes.
 - A **refill reminder** for patients on long term medication.
-- A real **bKash payment gateway integration** instead of a manually entered number.
+- A **live payment gateway** (bKash Tokenized Checkout, Nagad, or a card gateway such as SSLCommerz) as a second `IPaymentGateway` implementation, replacing the sandbox.
 - A **Bangla language toggle** for the customer screens.
 - Moving from ADO.NET to **Entity Framework Core** so the repository layer shrinks further.
 

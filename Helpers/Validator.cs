@@ -98,5 +98,80 @@ namespace PharmaLinkApp.Helpers
         {
             return value.Date > DateTime.Today;
         }
+
+        // ---------------------------------------------------------------------
+        //  PAYMENT DETAILS
+        //  Checked before anything is sent to the payment gateway, so a typing
+        //  mistake is a red label rather than a declined payment.
+        // ---------------------------------------------------------------------
+
+        /// <summary>The card number with spaces and dashes taken out.</summary>
+        public static string CardDigits(string value)
+        {
+            return (value ?? "").Replace(" ", "").Replace("-", "");
+        }
+
+        /// <summary>
+        /// A Visa card number: starts with 4, 16 digits, and passes the Luhn
+        /// check digit that every real card number carries. Spaces and dashes
+        /// are allowed, as printed on the card.
+        /// </summary>
+        public static bool IsVisaCardNumber(string value)
+        {
+            string digits = CardDigits(value);
+            return digits.Length == 16 && DigitsOnly.IsMatch(digits) && digits[0] == '4' && PassesLuhn(digits);
+        }
+
+        private static bool PassesLuhn(string digits)
+        {
+            int sum = 0;
+            bool doubleIt = false;
+            for (int i = digits.Length - 1; i >= 0; i--)
+            {
+                int d = digits[i] - '0';
+                if (doubleIt)
+                {
+                    d *= 2;
+                    if (d > 9) d -= 9;
+                }
+                sum += d;
+                doubleIt = !doubleIt;
+            }
+            return sum % 10 == 0;
+        }
+
+        /// <summary>
+        /// A card expiry written MM/YY that has not passed yet. A card is valid
+        /// until the last day of its expiry month.
+        /// </summary>
+        public static bool IsCardExpiry(string value)
+        {
+            if (IsBlank(value)) return false;
+            Match m = Regex.Match(value.Trim(), @"^(0[1-9]|1[0-2])\s*/\s*(\d{2})$");
+            if (!m.Success) return false;
+
+            int month = int.Parse(m.Groups[1].Value);
+            int year = 2000 + int.Parse(m.Groups[2].Value);
+            DateTime firstOfNextMonth = new DateTime(year, month, 1).AddMonths(1);
+            return firstOfNextMonth > DateTime.Today;
+        }
+
+        /// <summary>The three digit security code on the back of a Visa card.</summary>
+        public static bool IsCvv(string value)
+        {
+            return !IsBlank(value) && value.Trim().Length == 3 && DigitsOnly.IsMatch(value.Trim());
+        }
+
+        /// <summary>A six digit one-time code, as bKash and Nagad send by SMS.</summary>
+        public static bool IsOtp(string value)
+        {
+            return !IsBlank(value) && value.Trim().Length == 6 && DigitsOnly.IsMatch(value.Trim());
+        }
+
+        /// <summary>A wallet PIN: five digits for bKash, four for Nagad.</summary>
+        public static bool IsWalletPin(string value, int length)
+        {
+            return !IsBlank(value) && value.Length == length && DigitsOnly.IsMatch(value);
+        }
     }
 }

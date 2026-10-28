@@ -135,7 +135,16 @@ namespace PharmaLinkApp.Forms
             bill.AppendLine("Status    " + order.Status);
             bill.AppendLine("Payment   " + FriendlyPayment(order.PaymentMethod) +
                             (string.IsNullOrWhiteSpace(order.PaymentMobile)
-                                ? "" : "   (wallet " + MaskWallet(order.PaymentMobile) + ")"));
+                                ? "" : "   (wallet " + MaskWallet(order.PaymentMobile) + ")") +
+                            (string.IsNullOrWhiteSpace(order.CardLast4)
+                                ? "" : "   (card ending " + order.CardLast4 + ")"));
+            if (order.PaymentStatus.Length > 0)
+                bill.AppendLine("          " + FriendlyPaymentStatus(order));
+            if (!string.IsNullOrWhiteSpace(order.TransactionRef))
+                bill.AppendLine("Txn ref   " + order.TransactionRef);
+            if (order.DeliveryManName.Length > 0)
+                bill.AppendLine("Delivery  " + (order.DeliveryStatus == "Delivered" ? "Delivered by " : "Delivery man ") +
+                                order.DeliveryManName + "   (" + order.DeliveryManPhone + ")");
             bill.AppendLine();
             bill.AppendLine(new string('-', width));
 
@@ -212,8 +221,24 @@ namespace PharmaLinkApp.Forms
                 case "CashOnDelivery": return "Cash on delivery";
                 case "bKash": return "bKash";
                 case "Nagad": return "Nagad";
-                case "Card": return "Card";
+                case "Card": return "Visa card";
                 default: return stored;
+            }
+        }
+
+        /// <summary>The Payments row as one line of the bill.</summary>
+        private static string FriendlyPaymentStatus(Order order)
+        {
+            switch (order.PaymentStatus)
+            {
+                case "Paid":
+                    return order.PaymentMethod == "CashOnDelivery"
+                        ? "PAID in cash on delivery" + (order.PaidAt.HasValue ? ", " + order.PaidAt.Value.ToString("dd MMM yyyy") : "")
+                        : "PAID" + (order.PaidAt.HasValue ? " on " + order.PaidAt.Value.ToString("dd MMM yyyy, h:mm tt") : "");
+                case "Pending": return "TO PAY: cash to the delivery man on arrival";
+                case "Refunded": return "REFUNDED - the order was cancelled";
+                case "Cancelled": return "NOT CHARGED - the order was cancelled";
+                default: return order.PaymentStatus;
             }
         }
 

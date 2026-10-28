@@ -398,9 +398,16 @@ namespace PharmaLinkApp.Forms
                 dgvOrders.Columns["DeliveryCharge"].HeaderText = "Delivery";
                 dgvOrders.Columns["TotalAmount"].HeaderText = "Total (Tk)";
                 dgvOrders.Columns["PaymentMethod"].HeaderText = "Payment";
+                dgvOrders.Columns["PaymentStatus"].HeaderText = "Paid?";
                 dgvOrders.Columns["Status"].HeaderText = "Status";
                 dgvOrders.Columns["RxState"].HeaderText = "Prescription";
+                dgvOrders.Columns["Delivery"].HeaderText = "Delivery";
+                dgvOrders.Columns["DeliveryStatus"].Visible = false;
                 dgvOrders.Columns["DeliveryAddress"].Visible = false;
+                // The customer's mobile and the line count give up their columns
+                // to Paid? and Delivery; both are still on the invoice.
+                dgvOrders.Columns["CustomerPhone"].Visible = false;
+                dgvOrders.Columns["Items"].Visible = false;
                 // The delivery charge is the same flat fee on every order and is
                 // already inside Total, so it gives up its column to Prescription.
                 dgvOrders.Columns["DeliveryCharge"].Visible = false;
@@ -410,14 +417,14 @@ namespace PharmaLinkApp.Forms
                 // up to less than the grid, so no horizontal scrollbar appears.
                 UiTheme.SizeColumn(dgvOrders, "OrderId", 45, 52);
                 UiTheme.SizeColumn(dgvOrders, "OrderDate", 85, 96);
-                UiTheme.SizeColumn(dgvOrders, "CustomerName", 100, 90);
-                UiTheme.SizeColumn(dgvOrders, "CustomerPhone", 80, 86);
-                UiTheme.SizeColumn(dgvOrders, "Items", 40, 44);
-                UiTheme.SizeColumn(dgvOrders, "ItemsTotal", 65, 70);
-                UiTheme.SizeColumn(dgvOrders, "TotalAmount", 65, 70);
-                UiTheme.SizeColumn(dgvOrders, "PaymentMethod", 85, 80);
-                UiTheme.SizeColumn(dgvOrders, "Status", 65, 76);
-                UiTheme.SizeColumn(dgvOrders, "RxState", 80, 90);
+                UiTheme.SizeColumn(dgvOrders, "CustomerName", 80, 86);
+                UiTheme.SizeColumn(dgvOrders, "ItemsTotal", 55, 70);
+                UiTheme.SizeColumn(dgvOrders, "TotalAmount", 55, 70);
+                UiTheme.SizeColumn(dgvOrders, "PaymentMethod", 90, 104);
+                UiTheme.SizeColumn(dgvOrders, "PaymentStatus", 50, 62);
+                UiTheme.SizeColumn(dgvOrders, "Status", 70, 82);
+                UiTheme.SizeColumn(dgvOrders, "RxState", 80, 92);
+                UiTheme.SizeColumn(dgvOrders, "Delivery", 120, 120);
             }
 
             UpdateOrderButtons();
@@ -460,6 +467,10 @@ namespace PharmaLinkApp.Forms
         /// needed or already approved. OrderService.Confirm enforces the same
         /// rule in its UPDATE, so this only saves the owner a refused click, and
         /// the hint next to the buttons says what the order is waiting for.
+        ///
+        /// Once a delivery man has accepted an order, delivering it is his job,
+        /// so Mark delivered is off; once he has picked it up, the medicine has
+        /// left the shop and Cancel is off too. OrderService enforces both.
         /// </summary>
         private void UpdateOrderButtons()
         {
@@ -470,10 +481,14 @@ namespace PharmaLinkApp.Forms
             string rxState = hasRow && dgvOrders.Columns.Contains("RxState")
                 ? Convert.ToString(row.Cells["RxState"].Value) : "";
             bool rxOk = rxState == "Not needed" || rxState == "Approved";
+            string delivery = hasRow && dgvOrders.Columns.Contains("DeliveryStatus")
+                ? Convert.ToString(row.Cells["DeliveryStatus"].Value) : "";
+            bool riderHasIt = delivery.Length > 0;
+            bool leftTheShop = delivery == "PickedUp" || delivery == "Delivered";
 
             btnConfirmOrder.Enabled = hasRow && status == "Placed" && rxOk;
-            btnDeliverOrder.Enabled = hasRow && status == "Confirmed";
-            btnCancelOrder.Enabled = hasRow && status != "Delivered" && status != "Cancelled";
+            btnDeliverOrder.Enabled = hasRow && status == "Confirmed" && !riderHasIt;
+            btnCancelOrder.Enabled = hasRow && status != "Delivered" && status != "Cancelled" && !leftTheShop;
             btnViewInvoice.Enabled = hasRow;
 
             string hint = "";
@@ -485,6 +500,14 @@ namespace PharmaLinkApp.Forms
                     case "Rejected": hint = "Prescription rejected - waiting for a new upload"; break;
                     default: hint = "Prescription needs your review in Verify Prescriptions"; break;
                 }
+            }
+            else if (hasRow && status == "Confirmed" && delivery == "Assigned")
+            {
+                hint = "A delivery man has accepted this order - have it ready for pickup";
+            }
+            else if (hasRow && status == "Confirmed" && delivery == "PickedUp")
+            {
+                hint = "Out for delivery - the delivery man marks it delivered";
             }
             lblOrderActionHint.Text = hint;
         }
@@ -540,8 +563,8 @@ namespace PharmaLinkApp.Forms
                 if (!changed)
                 {
                     MessageBox.Show(
-                        "Order " + orderId + " was not marked delivered because it is no longer Confirmed. " +
-                        "The list has been refreshed.",
+                        "Order " + orderId + " was not marked delivered because it is no longer Confirmed, " +
+                        "or a delivery man has accepted it. The list has been refreshed.",
                         "Nothing changed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
@@ -559,7 +582,8 @@ namespace PharmaLinkApp.Forms
 
             DialogResult answer = MessageBox.Show(
                 "Cancel order " + orderId + "?\r\n\r\n" +
-                "The units on this order are put back in stock.",
+                "The units on this order are put back in stock. If the customer paid online, the payment " +
+                "is refunded; if a delivery man had accepted it, it is taken off his list.",
                 "Cancel order", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
             if (answer != DialogResult.Yes) return;
@@ -572,8 +596,8 @@ namespace PharmaLinkApp.Forms
                 if (!changed)
                 {
                     MessageBox.Show(
-                        "Order " + orderId + " was not cancelled because it has already been delivered or cancelled. " +
-                        "The list has been refreshed.",
+                        "Order " + orderId + " was not cancelled because it has already been delivered or cancelled, " +
+                        "or a delivery man has picked it up. The list has been refreshed.",
                         "Nothing changed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }

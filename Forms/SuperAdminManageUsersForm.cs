@@ -9,10 +9,12 @@ using PharmaLinkApp.Services;
 namespace PharmaLinkApp.Forms
 {
     /// <summary>
-    /// Requirement 4. Every Admin and Customer in one DataGridView, with the
-    /// pharmacy name and status filled in beside an owner's row through a LEFT
-    /// JOIN on Pharmacies. Both filters are optional, and an empty box means no
-    /// filter rather than no results.
+    /// Requirement 4. Every Admin, Customer and DeliveryMan in one DataGridView,
+    /// with the pharmacy name and status filled in beside an owner's row through
+    /// a LEFT JOIN on Pharmacies. Both filters are optional, and an empty box
+    /// means no filter rather than no results.
+    ///
+    /// A delivery man registers Pending and is approved here with Activate.
     ///
     /// Suspending or activating a pharmacy owner keeps the shop in step with
     /// the account (see AuthService.SetUserStatus): the account switch never
@@ -52,7 +54,7 @@ namespace PharmaLinkApp.Forms
             cmbStatus.Items.AddRange(new object[] { "All statuses", "Pending", "Active", "Suspended", ResetRequestedFilter });
             cmbStatus.SelectedIndex = _startWithResetRequests ? cmbStatus.Items.IndexOf(ResetRequestedFilter) : 0;
 
-            cmbUserType.Items.AddRange(new object[] { "All users", "Admin", "Customer" });
+            cmbUserType.Items.AddRange(new object[] { "All users", "Admin", "Customer", "DeliveryMan" });
             cmbUserType.SelectedIndex = 0;
 
             _loading = false;
@@ -211,8 +213,8 @@ namespace PharmaLinkApp.Forms
             btnActivate.Enabled = hasRow && status != "Active";
 
             // The grid never lists the Super Admin, but the role is checked
-            // anyway: the button must mean "Admin or Customer" by itself.
-            btnResetPassword.Enabled = hasRow && (role == "Admin" || role == "Customer");
+            // anyway: the button must mean "not the Super Admin" by itself.
+            btnResetPassword.Enabled = hasRow && (role == "Admin" || role == "Customer" || role == "DeliveryMan");
         }
 
         private void ChangeStatus(string newStatus)
@@ -232,6 +234,9 @@ namespace PharmaLinkApp.Forms
                 consequence = "\r\n\r\nTheir pharmacy, " + pharmacy + ", will be suspended too, so customers can no longer see it.";
             else if (role == "Admin" && newStatus == "Active" && pharmacyStatus == "Suspended")
                 consequence = "\r\n\r\nTheir pharmacy, " + pharmacy + ", will be reinstated at the same time.";
+            else if (role == "DeliveryMan" && newStatus == "Suspended")
+                consequence = "\r\n\r\nOrders he has accepted but not yet collected go back to the delivery pool. " +
+                              "If he is carrying an order right now, he cannot be suspended until it is delivered.";
 
             DialogResult answer = MessageBox.Show(
                 "Set " + name + "'s account to " + newStatus + "?" + consequence,
@@ -280,7 +285,7 @@ namespace PharmaLinkApp.Forms
             string status = row.Cells["Status"].Value.ToString();
             bool requested = row.Cells["PasswordResetRequestedAt"].Value is DateTime;
 
-            if (role != "Admin" && role != "Customer") return;
+            if (role != "Admin" && role != "Customer" && role != "DeliveryMan") return;
 
             string warning = requested
                 ? ""
